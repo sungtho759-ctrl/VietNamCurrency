@@ -1,0 +1,14 @@
+Tập valid, phóng to ×1, IoU >= 0.5
+tất cả     439 ảnh, 1074 tờ,  645 khung | vị trí: recall 55.68% precision 92.71% | vị trí + mệnh giá: recall 54.47% precision 90.70% F1 68.06% | đếm đúng số tờ 56.04%, đúng tổng tiền 52.16% | 7542 ms/ảnh
+1 tờ       188 ảnh,  188 tờ,  173 khung | vị trí: recall 84.04% precision 91.33% | vị trí + mệnh giá: recall 78.72% precision 85.55% F1 81.99% | đếm đúng số tờ 82.98%, đúng tổng tiền 77.66% | 9242 ms/ảnh
+nhiều tờ   251 ảnh,  886 tờ,  472 khung | vị trí: recall 49.66% precision 93.22% | vị trí + mệnh giá: recall 49.32% precision 92.58% F1 64.36% | đếm đúng số tờ 35.86%, đúng tổng tiền 33.07% | 6269 ms/ảnh
+
+Tập valid, phóng to ×1.5, IoU >= 0.5
+tất cả     439 ảnh, 1074 tờ,  695 khung | vị trí: recall 62.66% precision 96.83% | vị trí + mệnh giá: recall 61.73% precision 95.40% F1 74.96% | đếm đúng số tờ 57.18%, đúng tổng tiền 55.13% | 28068 ms/ảnh
+1 tờ       188 ảnh,  188 tờ,  158 khung | vị trí: recall 79.26% precision 94.30% | vị trí + mệnh giá: recall 73.94% precision 87.97% F1 80.35% | đếm đúng số tờ 80.32%, đúng tổng tiền 75.53% | 34928 ms/ảnh
+nhiều tờ   251 ảnh,  886 tờ,  537 khung | vị trí: recall 59.14% precision 97.58% | vị trí + mệnh giá: recall 59.14% precision 97.58% F1 73.65% | đếm đúng số tờ 39.84%, đúng tổng tiền 39.84% | 22929 ms/ảnh
+
+Tập valid, phóng to ×2, IoU >= 0.5
+tất cả     439 ảnh, 1074 tờ,  685 khung | vị trí: recall 60.61% precision 95.04% | vị trí + mệnh giá: recall 59.59% precision 93.43% F1 72.77% | đếm đúng số tờ 52.62%, đúng tổng tiền 50.57% | 38292 ms/ảnh
+1 tờ       188 ảnh,  188 tờ,  153 khung | vị trí: recall 73.40% precision 90.20% | vị trí + mệnh giá: recall 69.15% precision 84.97% F1 76.25% | đếm đúng số tờ 72.34%, đúng tổng tiền 68.62% | 47856 ms/ảnh
+nhiều tờ   251 ảnh,  886 tờ,  532 khung | vị trí: recall 57.90% precision 96.43% | vị trí + mệnh giá: recall 57.56% precision 95.86% F1 71.93% | đếm đúng số tờ 37.85%, đúng tổng tiền 37.05% | 31128 ms/ảnh

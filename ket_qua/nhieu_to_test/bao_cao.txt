@@ -1,0 +1,4 @@
+Tập test, phóng to ×1.5, IoU >= 0.5
+tất cả     218 ảnh,  558 tờ,  374 khung | vị trí: recall 64.34% precision 95.99% | vị trí + mệnh giá: recall 62.37% precision 93.05% F1 74.68% | đếm đúng số tờ 58.72%, đúng tổng tiền 55.50% | 2427 ms/ảnh
+1 tờ        87 ảnh,   87 tờ,   76 khung | vị trí: recall 78.16% precision 89.47% | vị trí + mệnh giá: recall 71.26% precision 81.58% F1 76.07% | đếm đúng số tờ 82.76%, đúng tổng tiền 75.86% | 3415 ms/ảnh
+nhiều tờ   131 ảnh,  471 tờ,  298 khung | vị trí: recall 61.78% precision 97.65% | vị trí + mệnh giá: recall 60.72% precision 95.97% F1 74.38% | đếm đúng số tờ 42.75%, đúng tổng tiền 41.98% | 1770 ms/ảnh

@@ -1,0 +1,17 @@
+Tập valid: 1074 tờ tiền, 2592 bộ tham số
+Quy tắc chọn: accuracy cao nhất với precision >= 95%
+
+An toàn (chỉ SIFT)     K=0 RANSAC=10.0 inlier>=8   khoảng cách>=1.1  phủ quyết màu=0 đồng thuận>=0 dự phòng màu=0.0 | accuracy 68.06%  coverage 69.18%  precision 98.38%  macro-F1 79.39%  sai 12
+Cân bằng (chỉ SIFT)    K=0 RANSAC=12.0 inlier>=8   khoảng cách>=1.0  phủ quyết màu=0 đồng thuận>=0 dự phòng màu=0.0 | accuracy 68.90%  coverage 70.58%  precision 97.63%  macro-F1 79.81%  sai 18
+Tốt nhất               K=0 RANSAC=12.0 inlier>=8   khoảng cách>=1.3  phủ quyết màu=0 đồng thuận>=5 dự phòng màu=0.8 | accuracy 87.06%  coverage 89.20%  precision 97.60%  macro-F1 91.87%  sai 23
+
+Tốt nhất theo mức precision yêu cầu:
+>= 95%                 K=0 RANSAC=12.0 inlier>=8   khoảng cách>=1.3  phủ quyết màu=0 đồng thuận>=5 dự phòng màu=0.8 | accuracy 87.06%  coverage 89.20%  precision 97.60%  macro-F1 91.87%  sai 23
+>= 97%                 K=0 RANSAC=12.0 inlier>=8   khoảng cách>=1.3  phủ quyết màu=0 đồng thuận>=5 dự phòng màu=0.8 | accuracy 87.06%  coverage 89.20%  precision 97.60%  macro-F1 91.87%  sai 23
+>= 98%                 K=8 RANSAC=10.0 inlier>=6   khoảng cách>=1.3  phủ quyết màu=2 đồng thuận>=5 dự phòng màu=0.8 | accuracy 84.64%  coverage 86.31%  precision 98.06%  macro-F1 90.56%  sai 18
+>= 99%                 K=8 RANSAC=12.0 inlier>=10  khoảng cách>=1.3  phủ quyết màu=2 đồng thuận>=5 dự phòng màu=0.7 | accuracy 82.77%  coverage 83.24%  precision 99.44%  macro-F1 89.91%  sai 5
+
+Tác dụng từng thành phần (tốt nhất ở precision >= 98%):
+Chỉ SIFT, mẫu gốc      K=0 RANSAC=10.0 inlier>=8   khoảng cách>=1.1  phủ quyết màu=0 đồng thuận>=0 dự phòng màu=0.0 | accuracy 68.06%  coverage 69.18%  precision 98.38%  macro-F1 79.39%  sai 12
+SIFT mẫu gốc + màu     K=0 RANSAC=10.0 inlier>=8   khoảng cách>=1.3  phủ quyết màu=0 đồng thuận>=5 dự phòng màu=0.7 | accuracy 82.87%  coverage 84.17%  precision 98.45%  macro-F1 89.66%  sai 14
+SIFT + mẫu train + màu K=8 RANSAC=10.0 inlier>=6   khoảng cách>=1.3  phủ quyết màu=2 đồng thuận>=5 dự phòng màu=0.8 | accuracy 84.64%  coverage 86.31%  precision 98.06%  macro-F1 90.56%  sai 18
