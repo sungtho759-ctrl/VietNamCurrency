@@ -363,7 +363,7 @@ def crop_box(img, bbox, pad=0.05, min_side=400):
     return crop
 
 
-def report(name, rows, classes, out_dir):
+def report(name, rows, classes, out_dir, phuong_phap="SIFT"):
     y_true = [r["true"] for r in rows]
     y_pred = [r["pred"] for r in rows]
     n = len(rows)
@@ -424,7 +424,7 @@ def report(name, rows, classes, out_dir):
     ax.set_yticks(range(len(classes)), classes)
     ax.set_xlabel("Dự đoán")
     ax.set_ylabel("Thực tế")
-    ax.set_title(f"SIFT - {name}: accuracy {correct / n:.1%}")
+    ax.set_title(f"{phuong_phap} - {name}: accuracy {correct / n:.1%}")
     for i in range(cm.shape[0]):
         for j in range(cm.shape[1]):
             if cm[i, j]:

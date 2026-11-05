@@ -22,7 +22,12 @@ VietNamCurrency/
 │   ├── xem_loi.py               # Xuất bảng ảnh các tờ bị nhận diện lỗi
 │   ├── chay_so_sanh.sh          # Chạy lại tuần tự mọi cấu hình so sánh (đo thời gian cùng điều kiện)
 │   ├── thu_sift.py              # Minh họa: điểm khóa SIFT trên một ảnh mẫu
-│   └── doi_sanh.py              # Minh họa: đối sánh một ảnh mẫu với ảnh thử (ratio test, RANSAC)
+│   ├── doi_sanh.py              # Minh họa: đối sánh một ảnh mẫu với ảnh thử (ratio test, RANSAC)
+│   ├── yolo_chuan_bi.py         # Đổi nhãn COCO sang YOLO, loại ảnh train gần trùng
+│   ├── yolo_huan_luyen.py       # Huấn luyện YOLO11n
+│   ├── yolo_danh_gia.py         # Đánh giá YOLO với cùng chỉ số như SIFT + màu
+│   └── so_sanh_khung.py         # So sánh theo kích thước tờ, hình đối chiếu
+├── colab_yolo/                  # Notebook huấn luyện trên Google Colab, dữ liệu đóng gói và kết quả tải về
 ├── data/
 │   ├── templates/               # 20 ảnh mẫu gốc: <mệnh giá>_<số thứ tự>
 │   ├── templates_train/         # Ảnh mẫu bổ sung cắt từ tập train (tao_mau.py)
@@ -40,9 +45,11 @@ VietNamCurrency/
 │   │   └── mau_train_va_mau/    #   SIFT + 8 ảnh mẫu train + màu
 │   ├── do_tham_so/              # Kết quả dò tham số trên tập valid
 │   ├── nhieu_to_valid/, nhieu_to_test/  # Đánh giá nhận diện nhiều tờ (+ minh_hoa/)
+│   ├── yolo/                    # Trọng số, biểu đồ huấn luyện và kết quả đánh giá YOLO
 │   └── hinh_minh_hoa/           # Hình dùng trong báo cáo
 └── bao_cao/
-    ├── Bao_cao_Nhan_dien_tien_Viet_Nam.docx / .pdf   # Báo cáo cuối kỳ
+    ├── Bao_cao_Nhom_06_cap_nhat.docx / .pdf          # Báo cáo mới nhất (có phần tiền tệ và so sánh YOLO)
+    ├── Bao_cao_Nhan_dien_tien_Viet_Nam.pdf           # Báo cáo cuối kỳ (bản trước)
     └── Ke_hoach_nhan_dien_tien_Viet_Nam.docx         # Kế hoạch dự án
 ```
 
@@ -186,6 +193,34 @@ homography suy biến cho khung méo dù mệnh giá đúng. Với ảnh chỉ c
 (`classify_image`, 88,51%) vẫn tốt hơn vì không yêu cầu khung đúng vị trí và cho phép khung lớn hơn ảnh.
 Hướng cải thiện: kiểm tra hình dạng khung (gần chữ nhật, đúng tỷ lệ tờ tiền), kết hợp tách vùng tờ tiền bằng xử lý
 ảnh hoặc dùng bộ phát hiện học sâu (YOLO) để tìm vị trí rồi nhận diện từng vùng bằng SIFT + màu.
+
+## So sánh với YOLO
+
+Mô hình YOLO11n được huấn luyện trên cùng bộ dữ liệu để so sánh. Tập train được loại ảnh gần trùng valid/test (cùng
+ngưỡng dHash 70 bit, còn 559 ảnh), mọi ngưỡng chọn trên tập valid, chỉ số tính bằng cùng hàm với SIFT + màu.
+Huấn luyện trên GPU Tesla T4 (Google Colab), 60 epoch, 11,3 phút; đánh giá và đo thời gian trên CPU i5-12450H.
+
+```
+pip install -r requirements_yolo.txt
+python src/yolo_chuan_bi.py      # đổi nhãn COCO sang YOLO -> data/dataset_yolo/
+python src/yolo_huan_luyen.py    # huấn luyện (nên dùng GPU, hoặc notebook colab_yolo/huan_luyen_yolo_colab.ipynb)
+python src/yolo_danh_gia.py      # đánh giá -> ket_qua/yolo/danh_gia_test/
+python src/so_sanh_khung.py      # recall theo kích thước tờ, hình đối chiếu
+```
+
+**Kết quả trên tập test:**
+
+| Kịch bản | SIFT + màu | YOLO11n |
+|---|---|---|
+| Tự tìm mọi tờ: F1 (vị trí + mệnh giá) | 74,68% | **90,63%** |
+| Tự tìm mọi tờ: ảnh đúng tổng tiền | 55,50% | **75,23%** |
+| Tự tìm mọi tờ: thời gian / ảnh | 2,4 s | **0,14 s** (8 luồng), 0,41 s (1 luồng) |
+| Đã biết vị trí: accuracy (558 tờ) | 87,46% | 87,46% (YOLO chạy trên ảnh đầy đủ) |
+| Đã biết vị trí: Macro-F1 | **91,76%** | 90,39% |
+| Ảnh một tờ, cùng quy tắc ngưỡng: accuracy (87 ảnh) | **88,51%** | 72,41% (89,66% nếu luôn trả lời, sai 8 tờ) |
+
+Trên vùng cắt theo khung bao, YOLO chỉ đạt 68,64% khi luôn trả lời. YOLO kém ở tờ 100.000 và 500.000 đồng (F1 74,14% và
+71,26%), SIFT + màu vẫn trên 90%. Chi tiết: mục 3.7 của báo cáo.
 
 ## Ghi chú về dữ liệu
 
