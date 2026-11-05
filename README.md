@@ -12,48 +12,48 @@ VietNamCurrency/
 ├── README.md
 ├── requirements.txt
 ├── src/                         # Mã nguồn
-│   ├── giao_dien.py             # Giao diện đồ họa nhận diện tiền (Tkinter)
-│   ├── nhan_dien.py             # Nhận diện mệnh giá trong một ảnh (dòng lệnh)
-│   ├── danh_gia_sift.py         # Logic nhận diện (SIFT, RANSAC, kết hợp màu, nhiều tờ) + đánh giá trên tập có nhãn
-│   ├── danh_gia_nhieu_to.py     # Đánh giá nhận diện nhiều tờ trong một ảnh
-│   ├── mau_sac.py               # Đặc trưng màu HSV và bộ phân loại màu
-│   ├── tao_mau.py               # Loại ảnh train gần trùng, tạo ảnh mẫu bổ sung + mô hình màu
-│   ├── tinh_chinh_nguong.py     # Dò tham số trên tập valid
-│   ├── xem_loi.py               # Xuất bảng ảnh các tờ bị nhận diện lỗi
-│   ├── chay_so_sanh.sh          # Chạy lại tuần tự mọi cấu hình so sánh (đo thời gian cùng điều kiện)
-│   ├── thu_sift.py              # Minh họa: điểm khóa SIFT trên một ảnh mẫu
-│   ├── doi_sanh.py              # Minh họa: đối sánh một ảnh mẫu với ảnh thử (ratio test, RANSAC)
-│   ├── yolo_chuan_bi.py         # Đổi nhãn COCO sang YOLO, loại ảnh train gần trùng
-│   ├── yolo_huan_luyen.py       # Huấn luyện YOLO11n
-│   ├── yolo_danh_gia.py         # Đánh giá YOLO với cùng chỉ số như SIFT + màu
-│   └── so_sanh_khung.py         # So sánh theo kích thước tờ, hình đối chiếu
+│   ├── gui.py             # Giao diện đồ họa nhận diện tiền (Tkinter)
+│   ├── recognize.py             # Nhận diện mệnh giá trong một ảnh (dòng lệnh)
+│   ├── evaluate_sift.py         # Logic nhận diện (SIFT, RANSAC, kết hợp màu, nhiều tờ) + đánh giá trên tập có nhãn
+│   ├── evaluate_multi_note.py     # Đánh giá nhận diện nhiều tờ trong một ảnh
+│   ├── color_model.py               # Đặc trưng màu HSV và bộ phân loại màu
+│   ├── build_templates.py               # Loại ảnh train gần trùng, tạo ảnh mẫu bổ sung + mô hình màu
+│   ├── tune_thresholds.py     # Dò tham số trên tập valid
+│   ├── view_errors.py               # Xuất bảng ảnh các tờ bị nhận diện lỗi
+│   ├── run_comparison.sh          # Chạy lại tuần tự mọi cấu hình so sánh (đo thời gian cùng điều kiện)
+│   ├── demo_sift.py              # Minh họa: điểm khóa SIFT trên một ảnh mẫu
+│   ├── demo_matching.py              # Minh họa: đối sánh một ảnh mẫu với ảnh thử (ratio test, RANSAC)
+│   ├── yolo_prepare.py         # Đổi nhãn COCO sang YOLO, loại ảnh train gần trùng
+│   ├── yolo_train.py       # Huấn luyện YOLO11n
+│   ├── yolo_evaluate.py         # Đánh giá YOLO với cùng chỉ số như SIFT + màu
+│   └── compare_boxes.py         # So sánh theo kích thước tờ, hình đối chiếu
 ├── colab_yolo/                  # Notebook huấn luyện trên Google Colab, dữ liệu đóng gói và kết quả tải về
 ├── data/
 │   ├── templates/               # 20 ảnh mẫu gốc: <mệnh giá>_<số thứ tự>
-│   ├── templates_train/         # Ảnh mẫu bổ sung cắt từ tập train (tao_mau.py)
-│   ├── mo_hinh_mau.npz          # Mô hình màu: histogram HSV của 1.393 tờ train (tao_mau.py)
-│   ├── anh_thu/                 # Ảnh thử cho nhan_dien.py
+│   ├── templates_train/         # Ảnh mẫu bổ sung cắt từ tập train (build_templates.py)
+│   ├── color_model.npz          # Mô hình màu: histogram HSV của 1.393 tờ train (build_templates.py)
+│   ├── test_images/                 # Ảnh thử cho recognize.py
 │   └── dataset/                 # Bộ dữ liệu Roboflow: train / valid / test + _annotations.coco.json
-├── ket_qua/
-│   ├── sift_test/               # Kết quả cấu hình mặc định trên tập test (+ loi/: ảnh các tờ lỗi)
-│   ├── so_sanh/                 # Kết quả các cấu hình dùng để so sánh trong báo cáo
-│   │   ├── ban_dau/             #   ngưỡng ban đầu, chỉ SIFT
-│   │   ├── tinh_chinh_nguong/   #   đã tinh chỉnh ngưỡng + nới diện tích, chỉ SIFT
-│   │   ├── luat_khoang_cach/    #   thêm luật khoảng cách, chỉ SIFT
-│   │   ├── chi_mau/             #   chỉ màu, luôn trả lời
-│   │   ├── chi_mau_tu_choi/     #   chỉ màu, từ chối khi d1/d2 > 0,9
-│   │   └── mau_train_va_mau/    #   SIFT + 8 ảnh mẫu train + màu
-│   ├── do_tham_so/              # Kết quả dò tham số trên tập valid
-│   ├── nhieu_to_valid/, nhieu_to_test/  # Đánh giá nhận diện nhiều tờ (+ minh_hoa/)
+├── results/
+│   ├── sift_test/               # Kết quả cấu hình mặc định trên tập test (+ errors/: ảnh các tờ lỗi)
+│   ├── comparison/                 # Kết quả các cấu hình dùng để so sánh trong báo cáo
+│   │   ├── baseline/             #   ngưỡng ban đầu, chỉ SIFT
+│   │   ├── tuned_thresholds/   #   đã tinh chỉnh ngưỡng + nới diện tích, chỉ SIFT
+│   │   ├── margin_rule/    #   thêm luật khoảng cách, chỉ SIFT
+│   │   ├── color_only/             #   chỉ màu, luôn trả lời
+│   │   ├── color_only_reject/     #   chỉ màu, từ chối khi d1/d2 > 0,9
+│   │   └── train_templates_color/    #   SIFT + 8 ảnh mẫu train + màu
+│   ├── parameter_search/              # Kết quả dò tham số trên tập valid
+│   ├── multi_note_valid/, multi_note_test/  # Đánh giá nhận diện nhiều tờ (+ examples/)
 │   ├── yolo/                    # Trọng số, biểu đồ huấn luyện và kết quả đánh giá YOLO
-│   └── hinh_minh_hoa/           # Hình dùng trong báo cáo
-└── bao_cao/
-    ├── Bao_cao_Nhom_06_cap_nhat.docx / .pdf          # Báo cáo mới nhất (có phần tiền tệ và so sánh YOLO)
-    ├── Bao_cao_Nhan_dien_tien_Viet_Nam.pdf           # Báo cáo cuối kỳ (bản trước)
-    └── Ke_hoach_nhan_dien_tien_Viet_Nam.docx         # Kế hoạch dự án
+│   └── figures/           # Hình dùng trong báo cáo
+└── report/
+    ├── Report_Group06.docx / .pdf          # Báo cáo mới nhất (có phần tiền tệ và so sánh YOLO)
+    ├── Currency_Recognition_Report_Previous.pdf           # Báo cáo cuối kỳ (bản trước)
+    └── Currency_Recognition_Plan.docx         # Kế hoạch dự án
 ```
 
-Mỗi thư mục kết quả đánh giá gồm: `bao_cao_to_tien.txt`, `bao_cao_anh.txt` (chỉ số), `du_doan_*.csv`
+Mỗi thư mục kết quả đánh giá gồm: `report_banknote.txt`, `report_image.txt` (chỉ số), `predictions_*.csv`
 (dự đoán từng mẫu) và `confusion_*.png` (ma trận nhầm lẫn).
 
 ## Cài đặt
@@ -62,30 +62,30 @@ Mỗi thư mục kết quả đánh giá gồm: `bao_cao_to_tien.txt`, `bao_cao_
 pip install -r requirements.txt
 ```
 
-Cần Python 3.8+ và OpenCV ≥ 4.4 (đã có sẵn SIFT). `data/templates_train/` và `data/mo_hinh_mau.npz` đã có sẵn;
-nếu xóa thì tạo lại bằng `python src/tao_mau.py`.
+Cần Python 3.8+ và OpenCV ≥ 4.4 (đã có sẵn SIFT). `data/templates_train/` và `data/color_model.npz` đã có sẵn;
+nếu xóa thì tạo lại bằng `python src/build_templates.py`.
 
 ## Sử dụng
 
 Các lệnh chạy từ thư mục dự án (script tự xác định thư mục dự án nên chạy từ đâu cũng được):
 
 ```
-python src/giao_dien.py                          # mở giao diện nhận diện
-python src/nhan_dien.py                          # nhận diện data/anh_thu/query.jpg
-python src/nhan_dien.py duong/dan/anh.jpg        # nhận diện ảnh bất kỳ
-python src/danh_gia_sift.py --split test         # đánh giá trên tập test -> ket_qua/sift_test/
-python src/xem_loi.py                            # bảng ảnh các tờ lỗi -> ket_qua/sift_test/loi/
-python src/tao_mau.py                            # tạo lại ảnh mẫu train + mô hình màu
-python src/tinh_chinh_nguong.py --split valid    # dò tham số trên tập valid -> ket_qua/do_tham_so/
+python src/gui.py                          # mở giao diện nhận diện
+python src/recognize.py                          # nhận diện data/test_images/query.jpg
+python src/recognize.py duong/dan/anh.jpg        # nhận diện ảnh bất kỳ
+python src/evaluate_sift.py --split test         # đánh giá trên tập test -> results/sift_test/
+python src/view_errors.py                            # bảng ảnh các tờ lỗi -> results/sift_test/errors/
+python src/build_templates.py                            # tạo lại ảnh mẫu train + mô hình màu
+python src/tune_thresholds.py --split valid    # dò tham số trên tập valid -> results/parameter_search/
 ```
 
 ## Giao diện
 
 ```
-python src/giao_dien.py
+python src/gui.py
 ```
 
-- **Mở ảnh...** hoặc **Chụp từ webcam** để nạp ảnh (mặc định mở sẵn `data/anh_thu/query.jpg`).
+- **Mở ảnh...** hoặc **Chụp từ webcam** để nạp ảnh (mặc định mở sẵn `data/test_images/query.jpg`).
 - **Nhận diện toàn ảnh:** SIFT tự định vị tờ tiền và vẽ khung homography – dùng cho ảnh chỉ có một tờ.
 - **Nhận diện vùng chọn:** kéo chuột khoanh vùng một tờ tiền rồi bấm nút – chính xác nhất (ứng với kịch bản
   "theo tờ tiền" khi đánh giá), dùng được cả với ảnh có nhiều tờ.
@@ -94,8 +94,8 @@ python src/giao_dien.py
 
 ## Cấu hình mặc định (SIFT + màu)
 
-Chọn trên tập **valid** (accuracy cao nhất với precision ≥ 95%). Hằng số ở đầu `src/danh_gia_sift.py`,
-dùng chung cho `nhan_dien.py` và `danh_gia_sift.py`:
+Chọn trên tập **valid** (accuracy cao nhất với precision ≥ 95%). Hằng số ở đầu `src/evaluate_sift.py`,
+dùng chung cho `recognize.py` và `evaluate_sift.py`:
 
 | Hằng số | Giá trị | Ý nghĩa |
 |---|---|---|
@@ -109,14 +109,14 @@ dùng chung cho `nhan_dien.py` và `danh_gia_sift.py`:
 | `AGREE_MIN` | 5 | SIFT chưa đủ ngưỡng nhưng ứng viên tốt nhất có ≥ 5 inlier và trùng mệnh giá màu xếp đầu thì nhận |
 | `COLOR_FALLBACK` | 0,8 | SIFT không kết luận, màu tách biệt rõ (khoảng cách lớp 1 / lớp 2 ≤ 0,8) thì lấy theo màu |
 
-Mọi hằng số đều có tùy chọn dòng lệnh trong `danh_gia_sift.py` (`--ransac`, `--min-inliers`, `--min-ratio`,
+Mọi hằng số đều có tùy chọn dòng lệnh trong `evaluate_sift.py` (`--ransac`, `--min-inliers`, `--min-ratio`,
 `--max-area`, `--margin`, `--k-train`, `--color-veto`, `--agree-min`, `--color-fallback`), cùng `--chi-mau r`
-(chỉ dùng màu, trả lời khi d1/d2 ≤ r), `--out` (thư mục kết quả trong `ket_qua/`) và `--limit N`.
+(chỉ dùng màu, trả lời khi d1/d2 ≤ r), `--out` (thư mục kết quả trong `results/`) và `--limit N`.
 
 Chạy lại **tất cả** cấu hình so sánh, tuần tự trong cùng điều kiện để thời gian so sánh được (~45–60 phút):
 
 ```
-bash src/chay_so_sanh.sh
+bash src/run_comparison.sh
 ```
 
 ## Kết quả trên tập test
@@ -133,7 +133,7 @@ Mọi giá trị tham số được chọn trên tập valid. Lưu ý: phân tí
 định hướng việc thiết kế các cải tiến, nên kết quả test sau cải tiến có thể lạc quan hơn một chút (kết quả valid của
 cấu hình mặc định: 87,06%).
 
-**Theo tờ tiền** (558 tờ). Thời gian đo khi chạy tuần tự mọi cấu hình bằng `src/chay_so_sanh.sh` trên Intel Core
+**Theo tờ tiền** (558 tờ). Thời gian đo khi chạy tuần tự mọi cấu hình bằng `src/run_comparison.sh` trên Intel Core
 i5-12450H, một tiến trình, không gồm thời gian đọc ảnh và nạp ảnh mẫu:
 
 | Cấu hình | Accuracy | Tỷ lệ trả lời | Accuracy trên mẫu có kết quả | Macro-F1 | Sai mệnh giá | Thời gian / tờ |
@@ -162,7 +162,7 @@ accuracy trên mẫu có kết quả. Chỉ màu cũng cần biết trước vù
 
 ## Nhận diện nhiều tờ trong một ảnh
 
-`detect_all()` trong `src/danh_gia_sift.py` lặp SIFT + RANSAC:
+`detect_all()` trong `src/evaluate_sift.py` lặp SIFT + RANSAC:
 
 1. Đối sánh mọi điểm SIFT còn lại của ảnh với các ảnh mẫu, lấy giả thuyết homography mạnh nhất làm vị trí một tờ.
 2. Quyết định mệnh giá bằng các ứng viên **ở cùng vị trí** (luật khoảng cách chỉ so với mệnh giá khớp vào cùng chỗ,
@@ -174,8 +174,8 @@ tập valid trong {1; 1,5; 2}. Đối sánh K láng giềng (K = 6) được tí
 hoạt động.
 
 ```
-python src/danh_gia_nhieu_to.py --split valid --phong-to 1 1.5 2 --workers 10   # chọn mức phóng to
-python src/danh_gia_nhieu_to.py --split test --phong-to 1.5                     # đánh giá cuối -> ket_qua/nhieu_to_test/
+python src/evaluate_multi_note.py --split valid --phong-to 1 1.5 2 --workers 10   # chọn mức phóng to
+python src/evaluate_multi_note.py --split test --phong-to 1.5                     # đánh giá cuối -> results/multi_note_test/
 ```
 
 Một khung dự đoán đúng vị trí khi khung bao của nó có IoU ≥ 0,5 với khung bao trong nhãn (ghép một–một).
@@ -202,10 +202,10 @@ Huấn luyện trên GPU Tesla T4 (Google Colab), 60 epoch, 11,3 phút; đánh g
 
 ```
 pip install -r requirements_yolo.txt
-python src/yolo_chuan_bi.py      # đổi nhãn COCO sang YOLO -> data/dataset_yolo/
-python src/yolo_huan_luyen.py    # huấn luyện (nên dùng GPU, hoặc notebook colab_yolo/huan_luyen_yolo_colab.ipynb)
-python src/yolo_danh_gia.py      # đánh giá -> ket_qua/yolo/danh_gia_test/
-python src/so_sanh_khung.py      # recall theo kích thước tờ, hình đối chiếu
+python src/yolo_prepare.py      # đổi nhãn COCO sang YOLO -> data/dataset_yolo/
+python src/yolo_train.py    # huấn luyện (nên dùng GPU, hoặc notebook colab_yolo/train_yolo_colab.ipynb)
+python src/yolo_evaluate.py      # đánh giá -> results/yolo/evaluation_test/
+python src/compare_boxes.py      # recall theo kích thước tờ, hình đối chiếu
 ```
 
 **Kết quả trên tập test:**
@@ -225,12 +225,12 @@ Trên vùng cắt theo khung bao, YOLO chỉ đạt 68,64% khi luôn trả lời
 ## Ghi chú về dữ liệu
 
 - **Lỗi tên lớp:** trong `_annotations.coco.json`, `category_id` 1–9 thực chất ứng với tên mệnh giá **sắp theo thứ
-  tự chuỗi** (1000, 10000, 100000, 2000, 20000, 200000, 5000, 50000, 500000). `src/danh_gia_sift.py` đã tự sửa ánh
-  xạ này; chương trình khác dùng bộ dữ liệu cũng cần sửa tương tự (xem `ket_qua/hinh_minh_hoa/kiem_tra_nhan_lop.jpg`).
+  tự chuỗi** (1000, 10000, 100000, 2000, 20000, 200000, 5000, 50000, 500000). `src/evaluate_sift.py` đã tự sửa ánh
+  xạ này; chương trình khác dùng bộ dữ liệu cũng cần sửa tương tự (xem `results/figures/label_check.jpg`).
 - **Rò rỉ dữ liệu:** Roboflow chia ngẫu nhiên các khung hình liên tiếp và bản tăng cường của cùng ảnh gốc vào cả ba
-  tập. `tao_mau.py` loại mọi ảnh train có mã dHash 256 bit cách ảnh valid/test bất kỳ ≤ 70 bit trước khi tạo ảnh
+  tập. `build_templates.py` loại mọi ảnh train có mã dHash 256 bit cách ảnh valid/test bất kỳ ≤ 70 bit trước khi tạo ảnh
   mẫu và mô hình màu (còn 559/1.537 ảnh train).
 - **Hạn chế:** mô hình màu học từ ảnh cùng bộ dữ liệu (cùng tờ tiền, nền, điều kiện chụp tương tự), nên với ảnh chụp
   ở môi trường khác hẳn (đèn vàng, cân bằng trắng lệch) màu có thể kém tin cậy hơn.
 
-Chi tiết phương pháp, phân tích lỗi và thảo luận: xem `bao_cao/Bao_cao_Nhan_dien_tien_Viet_Nam.pdf`.
+Chi tiết phương pháp, phân tích lỗi và thảo luận: xem `report/Currency_Recognition_Report_Previous.pdf`.
