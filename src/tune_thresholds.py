@@ -57,7 +57,7 @@ def _process(job):
     path, bbox, ann_id, true = job
     crop = crop_box(cv2.imread(path), bbox)
     cands = candidates(crop, _worker["templates"], RANSAC)
-    return {"ann_id": ann_id, "true": true, "color": _worker["color"].rank(hsv_hist(crop)),
+    return {"file": os.path.basename(path), "ann_id": ann_id, "true": true, "color": _worker["color"].rank(hsv_hist(crop)),
             "cands": {str(k): v for k, v in cands.items()}}
 
 
@@ -115,12 +115,15 @@ def main():
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 2))
     parser.add_argument("--lam-moi", action="store_true", help="Bỏ qua tệp ứng viên đã lưu, chạy lại SIFT")
+    parser.add_argument("--bo-trung-test", action="store_true",
+                        help="Chỉ dò trên ảnh valid không gần trùng test (data/test_clean.json, check_leakage.py); "
+                             "kết quả ghi với hậu tố _no_test_dup, không ghi đè best_thresholds.json")
     args = parser.parse_args()
 
     out_dir = ROOT / "results" / "parameter_search"
     out_dir.mkdir(parents=True, exist_ok=True)
-    # v3: ứng viên với cả ảnh mẫu train (có tên mẫu) + xếp hạng màu
-    cache = out_dir / f"candidates_{args.split}_v3.json"
+    # v4: ứng viên với cả ảnh mẫu train (có tên mẫu) + xếp hạng màu + tên ảnh
+    cache = out_dir / f"candidates_{args.split}_v4.json"
 
     if cache.exists() and not args.lam_moi and not args.limit:
         items = json.loads(cache.read_text(encoding="utf-8"))
@@ -130,13 +133,21 @@ def main():
         if not args.limit:
             cache.write_text(json.dumps(items), encoding="utf-8")
 
+    tag = args.split
+    if args.bo_trung_test:
+        dup = set(json.loads((ROOT / "data" / "test_clean.json").read_text(encoding="utf-8"))["valid_trung_test"])
+        n_all = len(items)
+        items = [it for it in items if it["file"] not in dup]
+        tag = f"{args.split}_no_test_dup"
+        print(f"Bỏ ảnh valid gần trùng test: còn {len(items)}/{n_all} tờ")
+
     filtered = {(k, r): [[c for c in it["cands"][str(r)] if template_rank(c[4]) < k] for it in items]
                 for k in K_TRAIN for r in RANSAC}
     grid = list(itertools.product(K_TRAIN, RANSAC, MIN_INLIERS, MIN_RATIO, MAX_AREA, MARGIN,
                                   COLOR_VETO, AGREE_MIN, COLOR_FALLBACK))
     print(f"Thử {len(grid)} bộ tham số...", flush=True)
     results = [evaluate(items, filtered, params) for params in grid]
-    with open(out_dir / f"threshold_grid_{args.split}.csv", "w", newline="", encoding="utf-8") as f:
+    with open(out_dir / f"threshold_grid_{tag}.csv", "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=results[0].keys())
         writer.writeheader()
         writer.writerows(results)
@@ -159,7 +170,7 @@ def main():
                 f"dự phòng màu={r['fallback']:<4}| accuracy {r['accuracy']:.2%}  coverage {r['coverage']:.2%}  "
                 f"precision {r['precision']:.2%}  macro-F1 {r['macro_f1']:.2%}  sai {r['sai']}")
 
-    lines = [f"Tập {args.split}: {len(items)} tờ tiền, {len(results)} bộ tham số",
+    lines = [f"Tập {tag}: {len(items)} tờ tiền, {len(results)} bộ tham số",
              f"Quy tắc chọn: accuracy cao nhất với precision >= {args.min_precision:.0%}", ""]
     lines += [line(name, index[params]) for name, params in REFERENCE.items()]
     lines += [line("Tốt nhất", best), "", "Tốt nhất theo mức precision yêu cầu:"]
@@ -180,8 +191,8 @@ def main():
             lines.append(line(name, pick(reach)))
     text = "\n".join(lines)
     print(text)
-    (out_dir / f"results_{args.split}.txt").write_text(text, encoding="utf-8")
-    (out_dir / "best_thresholds.json").write_text(json.dumps({k: best[k] for k in KEYS}, indent=2),
+    (out_dir / f"results_{tag}.txt").write_text(text, encoding="utf-8")
+    (out_dir / ("best_thresholds_no_test_dup.json" if args.bo_trung_test else "best_thresholds.json")).write_text(json.dumps({k: best[k] for k in KEYS}, indent=2),
                                                   encoding="utf-8")
 
     # Đánh đổi precision – coverage
@@ -197,11 +208,11 @@ def main():
     ax.axhline(args.min_precision, color="gray", ls="--", lw=1)
     ax.set_xlabel("Tỷ lệ đưa ra kết quả (coverage)")
     ax.set_ylabel("Accuracy trên mẫu có kết quả")
-    ax.set_title(f"Dò tham số trên tập {args.split}")
+    ax.set_title(f"Dò tham số trên tập {tag}")
     ax.legend(fontsize=8)
     ax.grid(alpha=0.3)
     fig.tight_layout()
-    fig.savefig(out_dir / f"tradeoff_{args.split}.png", dpi=130)
+    fig.savefig(out_dir / f"tradeoff_{tag}.png", dpi=130)
     plt.close(fig)
 
 

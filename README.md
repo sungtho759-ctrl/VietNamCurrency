@@ -19,6 +19,8 @@ VietNamCurrency/
 │   ├── color_model.py               # Đặc trưng màu HSV và bộ phân loại màu
 │   ├── build_templates.py               # Loại ảnh train gần trùng, tạo ảnh mẫu bổ sung + mô hình màu
 │   ├── tune_thresholds.py     # Dò tham số trên tập valid
+│   ├── check_leakage.py         # Tìm ảnh test gần trùng valid/train -> data/test_clean.json
+│   ├── evaluate_clean.py        # Tính lại chỉ số trên phần test sạch -> results/clean_test/
 │   ├── view_errors.py               # Xuất bảng ảnh các tờ bị nhận diện lỗi
 │   ├── run_comparison.sh          # Chạy lại tuần tự mọi cấu hình so sánh (đo thời gian cùng điều kiện)
 │   ├── demo_sift.py              # Minh họa: điểm khóa SIFT trên một ảnh mẫu
@@ -130,7 +132,8 @@ giá riêng ở mục **Nhận diện nhiều tờ** bên dưới.
 Accuracy = Tỷ lệ trả lời × Accuracy trên mẫu có kết quả.
 
 Mọi giá trị tham số được chọn trên tập valid. Lưu ý: phân tích lỗi của cấu hình ban đầu được làm trên tập test và đã
-định hướng việc thiết kế các cải tiến, nên kết quả test sau cải tiến có thể lạc quan hơn một chút (kết quả valid của
+định hướng việc thiết kế các cải tiến, nên kết quả test sau cải tiến có thể lạc quan hơn một chút. Rò rỉ giữa valid
+và test đã được kiểm tra và không làm kết quả lạc quan hơn, xem mục **Kiểm tra rò rỉ giữa valid và test** (kết quả valid của
 cấu hình mặc định: 87,06%).
 
 **Theo tờ tiền** (558 tờ). Thời gian đo khi chạy tuần tự mọi cấu hình bằng `src/run_comparison.sh` trên Intel Core
@@ -229,8 +232,46 @@ Trên vùng cắt theo khung bao, YOLO chỉ đạt 68,64% khi luôn trả lời
   xạ này; chương trình khác dùng bộ dữ liệu cũng cần sửa tương tự (xem `results/figures/label_check.jpg`).
 - **Rò rỉ dữ liệu:** Roboflow chia ngẫu nhiên các khung hình liên tiếp và bản tăng cường của cùng ảnh gốc vào cả ba
   tập. `build_templates.py` loại mọi ảnh train có mã dHash 256 bit cách ảnh valid/test bất kỳ ≤ 70 bit trước khi tạo ảnh
-  mẫu và mô hình màu (còn 559/1.537 ảnh train).
+  mẫu và mô hình màu (còn 559/1.537 ảnh train). Rò rỉ giữa valid và test được kiểm tra riêng ở mục dưới.
 - **Hạn chế:** mô hình màu học từ ảnh cùng bộ dữ liệu (cùng tờ tiền, nền, điều kiện chụp tương tự), nên với ảnh chụp
   ở môi trường khác hẳn (đèn vàng, cân bằng trắng lệch) màu có thể kém tin cậy hơn.
+
+## Kiểm tra rò rỉ giữa valid và test
+
+Việc loại ảnh gần trùng ở trên chỉ áp dụng cho tập train. Tập valid và test vẫn chứa nhiều khung hình liên tiếp của
+cùng cảnh. Mọi ngưỡng (và trọng số `best.pt` của YOLO) đều được chọn trên valid, nên cần kiểm tra xem kết quả test có
+bị thổi phồng hay không.
+
+```
+python src/check_leakage.py                                # -> data/test_clean.json
+python src/evaluate_clean.py                               # -> results/clean_test/summary.md
+python src/tune_thresholds.py --split valid --bo-trung-test   # dò lại tham số trên valid không trùng test (~17 phút)
+```
+
+Một ảnh test bị coi là **rò rỉ** khi cùng ảnh gốc (trường `extra.name` của Roboflow) với một ảnh valid/train, hoặc mã
+dHash cách một ảnh valid (kể cả bản lật) ≤ 70 bit. Kết quả: **133/219 ảnh test rò rỉ**, chỉ **85 ảnh (237 tờ) sạch**;
+theo chiều ngược lại, 209/439 ảnh valid gần trùng test. `evaluate_clean.py` lọc lại các file dự đoán có sẵn,
+không chạy lại mô hình.
+
+| Chỉ số (tập test) | Toàn bộ | Sạch | Rò rỉ |
+|---|---|---|---|
+| SIFT + màu, theo tờ tiền: accuracy | 87,46% | **96,62%** | 80,69% |
+| SIFT + màu, ảnh một tờ: accuracy | 88,51% (87 ảnh) | **90,62%** (32 ảnh) | 87,27% (55 ảnh) |
+| SIFT + màu, tự tìm mọi tờ: F1 | 74,68% | **83,10%** | 67,59% |
+| YOLO11n, tự tìm mọi tờ: F1 | 90,63% | **97,47%** | 85,53% |
+
+Kết luận:
+
+1. **Rò rỉ không làm kết quả test lạc quan hơn.** Trên phần sạch, mọi phương pháp đều đạt kết quả cao hơn. Nhiều khả năng
+   phần rò rỉ chứa phần lớn ảnh khó, ví dụ các chuỗi khung hình video (43/133 ảnh, so với 7/85 ở phần sạch) bị chia sang cả
+   valid lẫn test.
+2. **Việc chọn tham số không bị ảnh hưởng bởi rò rỉ.** Dò lại toàn bộ 2.592 bộ tham số chỉ trên 560 tờ valid không
+   trùng test (`results/parameter_search/results_valid_no_test_dup.txt`) cho **đúng cấu hình mặc định** (RANSAC
+   12 px, 8 inlier, khoảng cách 1,3, đồng thuận 5, dự phòng màu 0,8).
+3. Phần sạch nhỏ (85 ảnh) và dễ hơn phần rò rỉ, nên không thay thế được kết quả trên toàn bộ tập test. Các bảng ở
+   trên vẫn dùng toàn bộ test; bảng này chỉ dùng để kiểm chứng. Thứ tự giữa các phương pháp không đổi, trừ chỉ màu
+   (luôn trả lời), vốn vượt nhẹ SIFT + màu trên phần sạch (97,05% so với 96,62%) nhưng nhận sai 7 tờ so với 1 tờ.
+4. Chưa làm: chia lại valid/test theo nhóm cảnh và huấn luyện lại YOLO. Riêng YOLO, `best.pt` được chọn theo valid,
+   nhưng YOLO cũng đạt kết quả cao hơn trên phần sạch, nên không có dấu hiệu bị thổi phồng.
 
 Chi tiết phương pháp, phân tích lỗi và thảo luận: xem `report/Currency_Recognition_Report_Previous.pdf`.
