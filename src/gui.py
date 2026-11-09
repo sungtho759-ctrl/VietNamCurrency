@@ -5,13 +5,16 @@
 - Nhận diện vùng chọn: kéo chuột khoanh vùng một tờ tiền rồi nhận diện vùng đó
   (giống kịch bản "theo tờ tiền" khi đánh giá – chính xác nhất).
 - Nhận diện tất cả các tờ: lặp SIFT + RANSAC để tìm từng tờ trong ảnh, hiển thị danh sách và tổng tiền.
+- Nhận diện thời gian thực: mở cửa sổ webcam của realtime.py (tiến trình riêng).
 
 Dùng chung logic và cấu hình mặc định với evaluate_sift.py.
 
 Chạy:  python src/gui.py
 """
+import subprocess
 import sys
 import threading
+from pathlib import Path
 import time
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -76,6 +79,8 @@ class App:
         self.btn_all = tk.Button(panel, text="Nhận diện tất cả các tờ", command=self.recognize_all,
                                  bg="#e7f0ff", **btn)
         self.btn_all.pack(pady=3)
+        tk.Button(panel, text="Nhận diện thời gian thực (webcam)", command=self.open_realtime,
+                  bg="#fff4e6", **btn).pack(pady=3)
         tk.Label(panel, text="Kéo chuột trên ảnh để khoanh vùng một tờ tiền.\n"
                              "Vùng chọn cho kết quả chính xác nhất.",
                  font=("Segoe UI", 9), fg="#495057", justify="left").pack(pady=(4, 14), anchor="w")
@@ -264,6 +269,15 @@ class App:
                   "dùng 'Nhận diện vùng chọn'."]
         self.detail.config(text="\n".join(lines))
         self.status.config(text=f"Tìm thấy {len(found)} tờ trong {seconds:.2f} s.")
+
+    def open_realtime(self):
+        """Mở cửa sổ nhận diện thời gian thực (src/realtime.py) ở tiến trình riêng.
+
+        Tiến trình riêng vì cửa sổ OpenCV và vòng lặp Tkinter không chạy chung một luồng giao diện được.
+        """
+        script = Path(__file__).with_name("realtime.py")
+        subprocess.Popen([sys.executable, str(script)], cwd=str(ROOT))
+        self.status.config(text="Đã mở cửa sổ thời gian thực (phím 1/2/3 đổi chế độ, Q để thoát).")
 
     def run_in_background(self, work):
         self.set_busy(True)

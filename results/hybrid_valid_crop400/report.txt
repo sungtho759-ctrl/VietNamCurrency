@@ -1,0 +1,8 @@
+Vùng cắt thu về cạnh dài tối đa 400 px. Tập valid: 439 ảnh, 1074 tờ, 1051 khung YOLO (ngưỡng 0.45, NMS không phân lớp). SIFT + màu trung bình 1486 ms / khung (đo khi chạy song song nhiều tiến trình, nên chậm hơn so với khi chạy một tiến trình).
+SIFT + màu không kết luận: 114/1051 khung
+
+Cách gán nhãn     Recall  Precision       F1  Đúng tổng tiền      1000    2000    5000   10000   20000   50000  100000  200000  500000
+yolo              89.85%     91.82%   90.82%          76.99%     94.5%   97.0%   98.8%   94.8%   95.4%   98.6%   84.8%   96.1%   76.2%
+hybrid            91.99%     94.01%   92.99%          81.09%     93.7%   99.1%   98.0%   91.8%   97.9%   99.5%   91.2%   98.0%   89.7%
+hybrid_strict     85.38%     97.87%   91.20%          75.40%     94.9%   99.0%   98.3%   95.1%   98.3%   99.5%   98.5%   99.2%   97.6%
+(các cột mệnh giá: F1 nhận diện mệnh giá trên khung đúng vị trí)

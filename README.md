@@ -13,6 +13,8 @@ VietNamCurrency/
 ├── requirements.txt
 ├── src/                         # Mã nguồn
 │   ├── gui.py             # Giao diện đồ họa nhận diện tiền (Tkinter)
+│   ├── realtime.py              # Nhận diện thời gian thực từ webcam / video (SIFT, YOLO, kết hợp)
+│   ├── evaluate_hybrid.py       # Đánh giá chế độ kết hợp YOLO định vị + SIFT + màu nhận diện
 │   ├── recognize.py             # Nhận diện mệnh giá trong một ảnh (dòng lệnh)
 │   ├── evaluate_sift.py         # Logic nhận diện (SIFT, RANSAC, kết hợp màu, nhiều tờ) + đánh giá trên tập có nhãn
 │   ├── evaluate_multi_note.py     # Đánh giá nhận diện nhiều tờ trong một ảnh
@@ -29,7 +31,7 @@ VietNamCurrency/
 │   ├── yolo_train.py       # Huấn luyện YOLO11n
 │   ├── yolo_evaluate.py         # Đánh giá YOLO với cùng chỉ số như SIFT + màu
 │   └── compare_boxes.py         # So sánh theo kích thước tờ, hình đối chiếu
-├── colab_yolo/                  # Notebook huấn luyện trên Google Colab, dữ liệu đóng gói và kết quả tải về
+├── colab_yolo/                  # Notebook huấn luyện trên Google Colab (+ dataset_yolo.zip để tải lên, không commit)
 ├── data/
 │   ├── templates/               # 20 ảnh mẫu gốc: <mệnh giá>_<số thứ tự>
 │   ├── templates_train/         # Ảnh mẫu bổ sung cắt từ tập train (build_templates.py)
@@ -93,6 +95,123 @@ python src/gui.py
   "theo tờ tiền" khi đánh giá), dùng được cả với ảnh có nhiều tờ.
 - **Nhận diện tất cả các tờ:** tự tìm từng tờ trong ảnh (lặp SIFT + RANSAC), vẽ khung, liệt kê và tính tổng tiền.
 - Bảng kết quả hiển thị mệnh giá, số cặp điểm khớp (hoặc "theo màu"), thời gian và 3 mệnh giá xếp đầu theo màu.
+- **Nhận diện thời gian thực (webcam):** mở cửa sổ của `src/realtime.py` (mục dưới).
+
+## Nhận diện thời gian thực
+
+```
+python src/realtime.py                            # webcam 0; chế độ hybrid nếu đã cài ultralytics, ngược lại sift
+python src/realtime.py --mode yolo --camera 1     # chọn chế độ / webcam
+python src/realtime.py --source video.mp4 --save ket_qua.mp4   # chạy trên video, ghi video kết quả
+```
+
+| Chế độ (phím) | Cách làm | Số tờ | Tốc độ nhận diện (CPU i5-12450H) |
+|---|---|---|---|
+| `sift` (1) | SIFT + RANSAC + màu trên toàn khung hình (`classify_image`) | 1 | ~1,4 lần/s |
+| `yolo` (2) | YOLO11n, ngưỡng 0,45, NMS không phân lớp (chọn trên valid) | nhiều | ~6–10 lần/s |
+| **`hybrid`** (3, mặc định) | YOLO định vị từng tờ, SIFT + màu nhận diện vùng cắt; chưa kết luận thì hiện "?" (`--yolo-label`: dùng nhãn YOLO) | nhiều | ~2–4 lần/s |
+
+**Vì sao mặc định là `hybrid`:** khi thử bằng webcam, YOLO nhận một tờ 100.000 đồng lúc thành 500.000, lúc thành 10.000
+(đúng điểm yếu đã thấy trên tập test). `src/evaluate_hybrid.py` so sánh ba cách gán nhãn trên cùng khung YOLO, chỉ số
+như mục nhận diện nhiều tờ (đúng vị trí IoU ≥ 0,5 và đúng mệnh giá); chế độ được chọn trên **valid**:
+
+| Cách gán nhãn | F1 valid | F1 test | Ảnh đúng tổng tiền (test) | F1 tờ 100.000 (valid / test) | F1 tờ 500.000 (valid / test) |
+|---|---|---|---|---|---|
+| YOLO | 90,82% | 90,63% | 75,23% | 84,8% / 82,1% | 76,2% / 77,3% |
+| **hybrid** (SIFT + màu, không kết luận thì giữ nhãn YOLO) | **93,27%** | **92,79%** | **81,19%** | 92,1% / 93,5% | 90,7% / 92,8% |
+| hybrid chặt (không kết luận thì bỏ khung) | 91,13% | 91,30% | 75,23% | 99,0% / 98,0% | 98,2% / 97,7% |
+| **hybrid, vùng cắt ≤ 400 px** (dùng trong `realtime.py`) | 92,99% | 92,97% | 81,65% | 91,2% / 93,5% | 89,7% / 94,8% |
+
+(F1 theo mệnh giá tính trên các khung đúng vị trí. Chi tiết: `results/hybrid_valid/`, `results/hybrid_test/`.)
+Hybrid chặt gần như không nhận sai mệnh giá nhưng bỏ khoảng 10% khung, nên F1 chung thấp hơn.
+
+**Điều chỉnh sau khi thử bằng webcam** (một tờ 100.000 đồng, 8 ảnh chụp lại trong lúc chạy):
+- Vùng cắt từ webcam lớn (~600 px) khớp được nhiều chi tiết chung giữa các mệnh giá (chân dung, quốc huy, quốc hiệu),
+  mệnh giá khác cũng đạt 40–46 cặp khớp nên luật khoảng cách 1,3 từ chối kết luận và nhãn YOLO (sai) được giữ. Thu
+  vùng cắt về cạnh dài ≤ 400 px (cỡ vùng cắt khi dò tham số) giữ nguyên kết quả trên valid (bảng trên), nhanh hơn
+  ~35%, và trên ảnh webcam nhận đúng 7/7 khung YOLO thay vì 4/7.
+- YOLO bỏ sót tờ cầm **lộn ngược** hoặc chỉ cho độ tin cậy thấp với tờ cầm nghiêng. Khi YOLO không thấy tờ nào, thử lại
+  trên khung hình xoay 180°, rồi SIFT trên toàn khung hình (bất biến với góc xoay); khung YOLO yếu (< 0,45) của tờ mới
+  được SIFT + màu kiểm tra. Hai đường dự phòng này chạy tối đa mỗi 0,5 giây và chỉ nhận khi SIFT có ≥ 8 cặp khớp
+  (không nhận kết luận chỉ dựa vào màu, để cảnh trống không bị "thấy" tờ tiền).
+- Kết quả trên 8 ảnh: đúng 8/8 (trước: 4/8 đúng, 1 sai thành 10.000, 3 không thấy). Lưu ý các điều chỉnh được thiết kế
+  dựa trên chính 8 ảnh này.
+- Lần thử webcam thứ ba (tờ cầm nghiêng, gập, cong, nhòe do chuyển động; 16 ảnh chụp lại): 4 đúng, 6 không thấy (tờ
+  gập đôi, cong, nhòe), **6 sai – cả 6 đều là lúc SIFT + màu chưa kết luận và nhãn YOLO được dùng thay** (có lần YOLO
+  chắc 0,98 rằng tờ 100.000 là 500.000), rồi nhãn sai được giữ 2 giây. Vì vậy `realtime.py` **không dùng nhãn YOLO**:
+  khi SIFT + màu chưa kết luận, tờ được vẽ khung xám "?" (không cộng vào tổng tiền), phiếu "?" không đè nhãn đã có, và
+  tờ được nhận diện lại sau 0,5 giây thay vì 2 giây. Trên tập valid cách này tương ứng "hybrid chặt" (F1 91,13% so với
+  93,27% khi một khung hình chỉ được nhận diện một lần), nhưng trên video mỗi tờ được thử lại nhiều lần. Tùy chọn
+  `--yolo-label` trả về cách cũ.
+- Lần thử webcam thứ tư (một rồi hai tờ 100.000 đồng, sau đó một tờ 500 đồng giấy; ~5,5 phút): trong các khung hình
+  có nhãn mệnh giá, ~94% đúng (lần 2: ~55%, lần 3: ~65%), còn lại nhầm thành 50.000 / 10.000 / 500.000; "?" xuất hiện
+  ở ~4% khung hình và thường chuyển sang nhãn đúng ngay sau đó. Tờ 500 đồng không có trong bộ dữ liệu (YOLO và mô hình
+  màu không biết lớp này) nhưng vẫn được nhận nhờ ảnh mẫu SIFT trong `data/templates/`. Hạn chế còn lại: tờ thường chỉ
+  được nhận từng lần rời rạc (khung hiện ~0,6 giây rồi mất), tốc độ nhận diện giảm còn ~2 lần/s khi YOLO không thấy tờ
+  và phải chạy SIFT trên toàn khung hình.
+- **Sửa chập chờn.** Đo trên hai video thử dựng từ tập test sạch (6 cảnh: 3 ảnh một tờ, 3 ảnh ba tờ; mỗi cảnh 4 giây
+  xoay dần 0°→180° và thu nhỏ; video A chuyển cảnh đột ngột, video B có 1 giây trống giữa các cảnh như khi rút tờ ra
+  rồi đưa tờ khác vào), phát đúng tốc độ thực, tính từ giây thứ hai mỗi cảnh; vì luồng nhận diện bỏ khung khác nhau
+  mỗi lần chạy nên lấy trung bình 3 lần:
+
+  | Video | Phiên bản | Khung hiện đủ và đúng mọi tờ | Khung có nhãn sai | Số lần khung tắt rồi hiện lại |
+  |---|---|---|---|---|
+  | A (chuyển cảnh đột ngột) | trước khi sửa (1 lần chạy) | 57,8% | 0% | 5 |
+  | A | sau khi sửa | 51,0% | 7,3% | 0 |
+  | B (có khoảng trống) | sau khi sửa | 62,3% | 0% | 0 |
+  | A / B | chế độ `yolo` | 74,4% / 69,7% | 25,6% / 29,2% | 0 / 0 |
+
+  Hết hẳn hiện tượng khung tắt rồi hiện lại. Đánh đổi: khi một tờ **thế chỗ tức thì** tờ khác ở cùng vị trí (chỉ có
+  ở video A), vết cũ được giữ nên tờ mới có thể mang nhãn cũ đến lần kiểm tra lại (≤ 2 giây) nếu YOLO gọi hai tờ cùng
+  một tên. Đã thử phát hiện việc thế chỗ bằng thay đổi màu vùng cắt: giảm nhãn sai ở video A (còn ~1–2%) nhưng
+  kích hoạt nhầm khi tờ xoay nhanh, làm video B tụt còn ~34% khung đúng, nên không dùng. Phần còn thiếu chủ yếu là
+  "?" ở các tờ nhỏ bị xoay nghiêng trong ảnh nhiều tờ (YOLO gọi đúng các tờ này nhưng SIFT + màu chưa kết luận).
+- Lần thử webcam thứ năm (~10,5 phút, có ghi hình gốc bằng `--record`): khung không còn chớp tắt (thường hiện liền
+  3–11 giây), ~90% khung có nhãn là đúng. Lỗi còn lại: ngay cả với tờ 100.000 to, phẳng, rõ nét, SIFT xếp **đúng
+  100.000 đầu** nhưng mệnh giá khác cũng đạt 35–52 cặp khớp vì mặt trước mọi tờ polymer có chung chân dung, quốc huy,
+  quốc hiệu, nên luật khoảng cách 1,3 từ chối kết luận (màu dưới ánh sáng webcam lại xếp 200.000 / 500.000 đầu).
+- **Luật khoảng cách theo inlier riêng** (`decide(..., exclusive=True)` trong `evaluate_sift.py`): khi so mẫu thắng
+  với mẫu đối thủ, bỏ các điểm SIFT của ảnh mà cả hai cùng khớp vào – điểm chung không phải bằng chứng cho mệnh giá
+  nào. `candidates()` trả thêm chỉ số các điểm inlier; mặc định của dự án (bảng đánh giá ở trên) không đổi.
+  `python src/evaluate_hybrid.py --crop-max 400 --so-sanh-luat` so các luật trên cùng ứng viên SIFT:
+
+  | Luật | F1 hybrid chặt valid / test | Bản ghi webcam lần 5 (173 khung YOLO): đúng / sai / "?" | 38 ảnh chụp webcam: đúng / sai |
+  |---|---|---|---|
+  | tổng inlier ≥ 1,3× (mặc định dự án) | 91,20% / 91,48% | 59,5% / 9,8% / 30,6% | 16 / 2 |
+  | **inlier riêng ≥ 1,3×** (dùng trong `realtime.py`) | 90,96% / 91,01% | **69,9% / 9,2% / 20,8%** | **19 / 3** |
+  | inlier riêng ≥ 1,5× | 91,09% / 91,37% | 64,7% / 9,2% / 26,0% | |
+  | inlier riêng ≥ 2× | 91,13% / 91,17% | 56,6% / 9,8% / 33,5% | |
+
+  Trên bộ dữ liệu (tờ nhỏ, chụp xa) hai luật gần như ngang nhau; trên webcam (tờ ở gần, chi tiết chung chiếm nhiều
+  điểm khớp) luật inlier riêng giảm mạnh số "?" mà không tăng nhãn sai. Bản ghi webcam không có nhãn: "đúng" = 100.000
+  hoặc 500 đồng (hai tờ duy nhất được dùng trong buổi thử), mọi nhãn khác tính là sai. Lưu ý chưa có bản ghi webcam
+  độc lập để kiểm tra lại lựa chọn này.
+
+- Khung hình được hiển thị ngay. Việc nhận diện chạy ở luồng riêng trên khung hình mới nhất (khung đến trong lúc đang
+  bận thì bỏ qua), nên hình không giật dù nhận diện chậm hơn tốc độ camera.
+- **Chống chập chờn:** kết quả được bám theo giữa các lần nhận diện (ghép khung theo IoU ≥ 0,3). Tờ mới cần độ tin cậy
+  YOLO ≥ 0,45; tờ đang bám theo được giữ bởi khung ≥ 0,25. Một vết chỉ bị xóa khi bộ nhận diện không thấy nó **2 vòng
+  liên tiếp và** đã quá 0,6 giây (`--hold`; 1,5 giây với tờ do SIFT toàn khung hình tìm ra, vì đường này chỉ chạy mỗi
+  0,5 giây) – vòng nhận diện chậm không làm khung tự tắt khi tờ vẫn còn trong hình. Vết cũ nằm chồng lên vết vừa cập
+  nhật (tờ xoay làm khung mới lệch khỏi khung cũ) bị bỏ để không hiện hai khung cho một tờ.
+- Ở chế độ `hybrid`, SIFT + màu (trên vùng cắt ≤ 400 px) chạy cho **tối đa một tờ mỗi vòng** (ưu tiên tờ mới, tờ đang
+  "?", tờ YOLO đổi mệnh giá – dấu hiệu tờ khác vừa thế chỗ – rồi tờ quá 2 giây chưa kiểm tra, `--recheck`), để vòng
+  nhận diện ngắn và vị trí các tờ được YOLO cập nhật liên tục; tờ chưa đến lượt dùng kết quả đã lưu hoặc tạm hiện "?".
+  Nhãn hiển thị là kết quả SIFT + màu gần nhất (không bỏ phiếu trên kết quả đã lưu); lần kiểm tra lại "chưa rõ" chỉ giữ
+  mệnh giá cũ thêm 2 giây.
+- Chữ có dấu được dựng một lần thành ảnh nhỏ rồi dùng lại (vẽ: ~2 ms/khung thay vì ~11 ms), để luồng hiển thị không
+  tranh tài nguyên với luồng nhận diện. `--record goc.mp4` ghi lại hình gốc từ webcam để chạy lại sau bằng `--source`
+  (video từ tệp được phát đúng tốc độ, kể cả với `--no-show`, nên mô phỏng được webcam).
+- Màn hình hiển thị khung, mệnh giá và bằng chứng của từng tờ (số cặp điểm khớp, "màu" hoặc độ tin cậy YOLO), tổng số
+  tiền và tốc độ nhận diện. Phím: `1`/`2`/`3` đổi chế độ, `Space` tạm dừng, `S` lưu ảnh vào `results/realtime/`,
+  `Q` hoặc `Esc` thoát.
+- Chạy thử không cần webcam: `--no-show --sync --log log.csv` nhận diện mọi khung hình của video và ghi kết quả ra CSV.
+
+**Chạy thử** trên video tổng hợp từ 8 ảnh test sạch (4 ảnh một tờ, 4 ảnh 3–5 tờ; mỗi ảnh 10 khung hình có trượt nhẹ),
+một cảnh được tính đúng khi nhãn đa số trong 7 khung cuối khớp đúng toàn bộ các tờ: `hybrid` 6/8, `yolo` 5/8, `sift`
+2/8 (`sift` chỉ nhận một tờ nên sai cả 4 cảnh nhiều tờ). Hai lỗi còn lại của `hybrid`: tờ 100.000 đồng trong một khung
+hình video mờ, ám xanh (SIFT chỉ được ~10 cặp khớp, màu cũng xếp 200.000 đầu) và một tờ 500.000 đồng nhỏ mà YOLO không
+tìm thấy. Đây chỉ là bài thử chức năng, không thay cho các bảng đánh giá ở trên.
 
 ## Cấu hình mặc định (SIFT + màu)
 

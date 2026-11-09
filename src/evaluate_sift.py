@@ -91,7 +91,8 @@ def load_templates(k_train=K_TRAIN):
 def candidates(query, templates, ransac_thresholds=(5.0,)):
     """Đối sánh query với từng ảnh mẫu, trả về các giả thuyết hợp lệ về hình học.
 
-    Kết quả: {ngưỡng RANSAC: [(nhãn, số inlier, tỷ lệ inlier, diện tích khung / diện tích ảnh, tên mẫu, 4 góc khung), ...]}.
+    Kết quả: {ngưỡng RANSAC: [(nhãn, số inlier, tỷ lệ inlier, diện tích khung / diện tích ảnh, tên mẫu, 4 góc khung,
+    chỉ số các điểm SIFT của query là inlier), ...]}.
     Tách riêng bước này để dò ngưỡng mà không phải chạy lại SIFT.
     """
     result = {thr: [] for thr in ransac_thresholds}
@@ -140,34 +141,46 @@ def candidates(query, templates, ransac_thresholds=(5.0,)):
                 continue
 
             count = int(mask.sum())
+            inlier_pts = [m.trainIdx for m, k in zip(matches, mask.ravel()) if k]
             result[thr].append((t["label"], count, count / len(matches), area_ratio, t["name"],
-                                projected.reshape(-1, 2).round(1).tolist()))
+                                projected.reshape(-1, 2).round(1).tolist(), inlier_pts))
 
     return result
 
 
-def decide(cands, min_inliers, min_ratio, max_area=3.0, min_margin=1.0):
+def decide(cands, min_inliers, min_ratio, max_area=3.0, min_margin=1.0, exclusive=False):
     """Chọn mẫu có nhiều inlier nhất trong các giả thuyết vượt ngưỡng.
 
     min_margin: mẫu thắng phải có số inlier >= min_margin lần mẫu tốt nhất của
     mệnh giá khác; nếu không (hai mệnh giá khớp sát nút) thì trả về không xác định.
     1.0 nghĩa là tắt luật này.
+    exclusive: so số inlier *riêng* – bỏ các điểm SIFT của ảnh mà cả mẫu thắng lẫn mẫu đối thủ cùng khớp vào. Mặt
+    trước mọi tờ polymer có chung chân dung, quốc huy, quốc hiệu nên mệnh giá khác cũng khớp được nhiều điểm ở các
+    vùng này; điểm chung không phải bằng chứng cho mệnh giá nào.
     """
     valid = [c for c in cands if c[3] <= max_area]
     passed = [c for c in valid if c[1] >= min_inliers and c[2] >= min_ratio]
     if not passed:
         return UNKNOWN, 0
-    label, count = max(passed, key=lambda c: (c[1], c[2]))[:2]
-    rival = max((c[1] for c in valid if c[0] != label), default=0)
-    if min_margin > 1.0 and count < min_margin * rival:
-        return UNKNOWN, 0
+    best = max(passed, key=lambda c: (c[1], c[2]))
+    label, count = best[:2]
+    if min_margin > 1.0:
+        rivals = [c for c in valid if c[0] != label]
+        if exclusive and len(best) > 6:
+            own = set(best[6])
+            for c in rivals:
+                other = set(c[6])
+                if len(own - other) < min_margin * len(other - own):
+                    return UNKNOWN, 0
+        elif count < min_margin * max((c[1] for c in rivals), default=0):
+            return UNKNOWN, 0
     return label, count
 
 
 def fuse(cands, color_rank, min_inliers=MIN_INLIERS, min_ratio=MIN_RATIO, max_area=MAX_AREA,
-         min_margin=MIN_MARGIN, veto_k=COLOR_VETO, agree_min=AGREE_MIN, fallback=COLOR_FALLBACK):
+         min_margin=MIN_MARGIN, veto_k=COLOR_VETO, agree_min=AGREE_MIN, fallback=COLOR_FALLBACK, exclusive=False):
     """Kết hợp quyết định SIFT với xếp hạng màu [(nhãn, khoảng cách), ...] (None = chỉ dùng SIFT)."""
-    label, count = decide(cands, min_inliers, min_ratio, max_area, min_margin)
+    label, count = decide(cands, min_inliers, min_ratio, max_area, min_margin, exclusive)
     if color_rank is None:
         return label, count
     order = [c for c, _ in color_rank]
@@ -194,10 +207,11 @@ def fuse(cands, color_rank, min_inliers=MIN_INLIERS, min_ratio=MIN_RATIO, max_ar
 
 def classify(query, templates, min_inliers=MIN_INLIERS, min_ratio=MIN_RATIO, ransac=RANSAC_THRESH,
              max_area=MAX_AREA, min_margin=MIN_MARGIN, color_rank=None,
-             veto_k=COLOR_VETO, agree_min=AGREE_MIN, fallback=COLOR_FALLBACK):
+             veto_k=COLOR_VETO, agree_min=AGREE_MIN, fallback=COLOR_FALLBACK, exclusive=False):
     """Chọn mẫu có nhiều cặp hợp lệ sau RANSAC nhất, kết hợp màu nếu có color_rank."""
     cands = candidates(query, templates, (ransac,))[ransac]
-    return fuse(cands, color_rank, min_inliers, min_ratio, max_area, min_margin, veto_k, agree_min, fallback)
+    return fuse(cands, color_rank, min_inliers, min_ratio, max_area, min_margin, veto_k, agree_min, fallback,
+                exclusive)
 
 
 def locate(cands, max_area=MAX_AREA):

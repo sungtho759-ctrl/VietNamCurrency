@@ -2,7 +2,7 @@
 
 SIFT + đối sánh chỉ chạy một lần cho mỗi tờ tiền với toàn bộ ảnh mẫu (gốc + K_MAX ảnh mẫu train mỗi
 mệnh giá), chạy song song nhiều tiến trình. Ứng viên và xếp hạng màu được lưu vào
-results/parameter_search/candidates_<split>_v3.json; sau đó thử mọi tổ hợp tham số trên dữ liệu đã lưu.
+results/parameter_search/candidates_<split>_v4.json; sau đó thử mọi tổ hợp tham số trên dữ liệu đã lưu.
 
 Quy tắc chọn: accuracy cao nhất trong các bộ tham số có precision
 (accuracy trên mẫu có kết quả) >= --min-precision.

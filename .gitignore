@@ -2,3 +2,5 @@
 /data/dataset_yolo*
 /colab_yolo/*.zip
 /results/parameter_search/candidates_*.json
+/results/realtime
+__pycache__/
