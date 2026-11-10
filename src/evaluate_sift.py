@@ -57,8 +57,15 @@ def resize_max(img, max_side):
     return cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
 
 
+# Tăng tương phản cục bộ (CLAHE) cho ảnh xám trước khi trích SIFT, áp dụng cho cả ảnh mẫu lẫn ảnh cần nhận diện;
+# 0 = tắt (mặc định của mọi bảng đánh giá). Đặt trước khi gọi load_templates(). Xem realtime.py.
+CLAHE_CLIP = 0.0
+
+
 def extract(img):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    if CLAHE_CLIP:
+        gray = cv2.createCLAHE(clipLimit=CLAHE_CLIP, tileGridSize=(8, 8)).apply(gray)
     return sift.detectAndCompute(gray, None)
 
 
@@ -175,6 +182,39 @@ def decide(cands, min_inliers, min_ratio, max_area=3.0, min_margin=1.0, exclusiv
         elif count < min_margin * max((c[1] for c in rivals), default=0):
             return UNKNOWN, 0
     return label, count
+
+
+def quad_angle_dev(quad):
+    """Góc lệch so với 90° lớn nhất trong 4 góc của khung homography (0 = hình chữ nhật).
+
+    Khớp đúng một tờ tiền: ảnh mẫu chiếu lên ảnh gần như hình chữ nhật (đo được: trung vị ~10°). Khớp ngẫu nhiên vài
+    điểm trên vật không phải tiền (thẻ ATM, thẻ bảo hiểm y tế): khung méo gần như dẹt (64–85°).
+    """
+    q = np.float32(quad)
+    dev = 0.0
+    for i in range(4):
+        v1, v2 = q[i - 1] - q[i], q[(i + 1) % 4] - q[i]
+        cos = float(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-9))
+        dev = max(dev, abs(np.degrees(np.arccos(np.clip(cos, -1.0, 1.0))) - 90.0))
+    return dev
+
+
+def evidence_ok(cands, label, yolo_label=None, angle_max=45.0, k_hi=8, k_lo=4, max_area=MAX_AREA):
+    """Cổng bằng chứng khi đầu vào có thể không phải tiền (realtime.py): nhãn `label` chỉ được nhận nếu có ứng viên SIFT
+    cùng nhãn với khung gần chữ nhật (lệch <= angle_max độ) và >= k_hi inlier, hoặc >= k_lo inlier khi YOLO cũng nói
+    `label`. Kết quả chỉ dựa vào màu (không có ứng viên SIFT) không bao giờ qua cổng.
+
+    Các luật trong fuse() được dò trên bộ dữ liệu, nơi mọi vùng cắt chắc chắn là tờ tiền (chỉ cần chọn mệnh giá);
+    camera có thể thấy bất cứ vật gì, nên cần bằng chứng hình học rằng đây đúng là một tờ tiền.
+    """
+    if label == UNKNOWN:
+        return False
+    for c in cands:
+        if c[0] != label or c[3] > max_area or quad_angle_dev(c[5]) > angle_max:
+            continue
+        if c[1] >= k_hi or (k_lo is not None and yolo_label == label and c[1] >= k_lo):
+            return True
+    return False
 
 
 def fuse(cands, color_rank, min_inliers=MIN_INLIERS, min_ratio=MIN_RATIO, max_area=MAX_AREA,

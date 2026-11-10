@@ -1,4 +1,4 @@
-Vùng cắt thu về cạnh dài tối đa 400 px. Tập test: 218 ảnh, 558 tờ, 552 khung YOLO (ngưỡng 0.45, NMS không phân lớp). SIFT + màu trung bình 1936 ms / khung (đo khi chạy song song nhiều tiến trình, nên chậm hơn so với khi chạy một tiến trình).
+Vùng cắt thu về cạnh dài tối đa 400 px. Tập test: 218 ảnh, 558 tờ, 552 khung YOLO (ngưỡng 0.45, NMS không phân lớp). SIFT + màu trung bình 1048 ms / khung (đo khi chạy song song nhiều tiến trình, nên chậm hơn so với khi chạy một tiến trình).
 SIFT + màu không kết luận: 54/552 khung
 
 Cách gán nhãn     Recall  Precision       F1  Đúng tổng tiền      1000    2000    5000   10000   20000   50000  100000  200000  500000

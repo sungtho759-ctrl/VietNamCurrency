@@ -4,3 +4,4 @@
 /results/parameter_search/candidates_*.json
 /results/realtime
 __pycache__/
+/results/hybrid_*/cache.pkl

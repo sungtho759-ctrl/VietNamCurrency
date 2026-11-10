@@ -33,8 +33,9 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from color_model import MODEL_PATH, ColorModel, hsv_hist
-from evaluate_sift import (MIN_INLIERS, ROOT, UNKNOWN, classify, classify_image, crop_box, load_templates,
-                           resize_max)
+import evaluate_sift
+from evaluate_sift import (MIN_INLIERS, RANSAC_THRESH, ROOT, UNKNOWN, candidates, classify_image, crop_box,
+                           evidence_ok, fuse, load_templates, quad_angle_dev, resize_max)
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -52,6 +53,24 @@ HYBRID_CROP_MAX = 400        # hybrid: thu vùng cắt về cạnh dài tối đ
 # 91,20% (gần như không đổi); bản ghi webcam (173 khung YOLO): đúng 69,9% so với 59,5%, "?" 20,8% so với 30,6%,
 # sai 9,2% so với 9,8% (evaluate_hybrid.py --so-sanh-luat).
 MARGIN_EXCLUSIVE = True
+# Cổng bằng chứng (evaluate_sift.evidence_ok): camera có thể thấy vật không phải tiền – thẻ bảo hiểm y tế bị báo
+# 2.000 đ, thẻ ATM bị báo 2.000 / 20.000 đ (YOLO coi thẻ là tờ tiền; SIFT khớp ngẫu nhiên 5–8 điểm; màu xanh của thẻ
+# giống tờ 20.000 nên YOLO và màu cùng "đồng ý" sai). Chỉ báo mệnh giá khi có ứng viên SIFT cùng mệnh giá với khung
+# homography gần chữ nhật (lệch <= EVIDENCE_ANGLE độ; khớp đúng: trung vị ~10°, khớp ngẫu nhiên trên thẻ: 64–85°) và
+# >= EVIDENCE_MIN inlier, hoặc >= EVIDENCE_YOLO inlier khi YOLO cũng nói mệnh giá đó; kết quả chỉ theo màu không được
+# nhận. 200 vùng cắt thẻ (5 ảnh x 40 biến thể): lọt 0 (không cổng: 39, cổng cũ ">= 8 inlier hoặc trùng YOLO": 12);
+# bản ghi webcam: đúng 67,6% / sai 5,8% (cổng cũ 69,9% / 7,5%); valid F1 hybrid chặt 82,26% (cổng cũ 91,02%) vì tờ
+# nhỏ chụp xa ít điểm khớp, trước đây dựa vào màu – nay hiện "?".
+EVIDENCE_ANGLE, EVIDENCE_MIN, EVIDENCE_YOLO = 45.0, MIN_INLIERS, 4
+# hybrid: vết mất dấu lâu hơn N giây rồi được tìm lại -> nhận diện lại ngay (có thể đã là tờ khác ở cùng chỗ)
+REACQUIRE_GAP = 0.5
+# CLAHE dự phòng: vùng cắt ra "?" thì trích SIFT lại sau khi tăng tương phản cục bộ (CLAHE, clipLimit này; so với bộ
+# ảnh mẫu cũng đã tăng tương phản). Mặt sau tờ 20.000 dưới đèn phòng bị bạc màu, SIFT thường chỉ khớp 0–4 điểm. Luôn
+# bật CLAHE làm SIFT chậm gần gấp đôi (nhiều điểm đặc trưng hơn) nên chỉ dùng khi cần. Chọn trên valid (cùng cổng bằng
+# chứng ở trên): F1 hybrid chặt valid / test – tắt 82,26% / 84,16%, luôn bật (clip 2) 84,43% / 82,25%, khi "?"
+# 87,56% / 86,43%; bản ghi webcam đúng / sai / "?" – tắt 67,6% / 5,8% / 26,6%, khi "?" 78,6% / 6,9% / 14,5%; 200 vùng
+# cắt thẻ: lọt 0 ở mọi cách. 0 = tắt.
+CLAHE_FALLBACK = 2.0
 SIFT_FALLBACK_EVERY = 0.5    # hybrid: YOLO không thấy tờ nào -> thử SIFT toàn khung hình, tối đa mỗi N giây
 SIFT_HOLD = 1.5              # hybrid: vết do SIFT toàn khung hình tìm ra được giữ N giây khi bị trượt
 UNSURE_RECHECK = 0.5         # hybrid: SIFT + màu chưa kết luận -> hiện "?" và thử lại sau N giây
@@ -105,6 +124,7 @@ class Recognizers:
         # Mặc định tắt: khi thử bằng webcam, YOLO nhận sai tờ 100.000 ở cả 6/6 lần phải dùng nhãn YOLO.
         self.yolo_label = yolo_label
         self.templates = load_templates()
+        self.templates_clahe = self._with_clahe(load_templates) if CLAHE_FALLBACK else None
         self.color = ColorModel() if MODEL_PATH.exists() else None
         self.yolo = None
         self.yolo_error = ""
@@ -124,7 +144,8 @@ class Recognizers:
         small = resize_max(frame, SIFT_MAX_SIDE)
         s = frame.shape[1] / small.shape[1]
         label, inliers, quad = classify_image(small, self.templates, self.color, exclusive=MARGIN_EXCLUSIVE)
-        if label == UNKNOWN or quad is None:
+        # Cổng bằng chứng (không có YOLO): >= EVIDENCE_MIN inlier và khung gần chữ nhật
+        if label == UNKNOWN or quad is None or inliers < EVIDENCE_MIN or quad_angle_dev(quad) > EVIDENCE_ANGLE:
             return []
         return [{"label": label, "quad": (np.float32(quad) * s).tolist(), "conf": 1.0, "inliers": inliers,
                  "evidence": f"{inliers} khớp" if inliers else "màu"}]
@@ -148,12 +169,37 @@ class Recognizers:
         return [{"label": lab, "quad": box_quad(*box), "conf": p, "evidence": f"{p:.2f}"}
                 for lab, box, p in self.yolo_boxes(frame)]
 
-    def classify_crop(self, frame, box):
+    @staticmethod
+    def _with_clahe(fn, *args):
+        """Chạy fn với SIFT trích trên ảnh đã tăng tương phản CLAHE (evaluate_sift.CLAHE_CLIP; chỉ luồng nhận diện
+        gọi SIFT nên đổi biến toàn cục tạm thời là an toàn)."""
+        evaluate_sift.CLAHE_CLIP = CLAHE_FALLBACK
+        try:
+            return fn(*args)
+        finally:
+            evaluate_sift.CLAHE_CLIP = 0.0
+
+    def classify_crop(self, frame, box, yolo_label=None):
+        """Trả về (mệnh giá hoặc UNKNOWN, số inlier, có dùng CLAHE dự phòng không)."""
         crop = crop_box(frame, box)
         if HYBRID_CROP_MAX:
             crop = resize_max(crop, HYBRID_CROP_MAX)
         rank = self.color.rank(hsv_hist(crop)) if self.color else None
-        return classify(crop, self.templates, color_rank=rank, exclusive=MARGIN_EXCLUSIVE)
+
+        def attempt(templates):
+            cands = candidates(crop, templates, (RANSAC_THRESH,))[RANSAC_THRESH]
+            label, inliers = fuse(cands, rank, exclusive=MARGIN_EXCLUSIVE)
+            # Cổng bằng chứng (xem EVIDENCE_ANGLE): cần ứng viên SIFT cùng mệnh giá, khung gần chữ nhật, đủ điểm khớp
+            if label != UNKNOWN and not evidence_ok(cands, label, yolo_label, EVIDENCE_ANGLE, EVIDENCE_MIN,
+                                                    EVIDENCE_YOLO):
+                return UNKNOWN, inliers
+            return label, inliers
+
+        label, inliers = attempt(self.templates)
+        if label == UNKNOWN and self.templates_clahe:
+            label, inliers = self._with_clahe(attempt, self.templates_clahe)
+            return label, inliers, True
+        return label, inliers, False
 
     def hybrid(self, frame, tracker, recheck, now=None):
         """YOLO định vị; SIFT + màu nhận diện tờ mới hoặc đã lâu chưa kiểm tra lại.
@@ -168,19 +214,25 @@ class Recognizers:
         if not boxes:
             return self.sift_fallback(frame, now)
         weak_new, strong = [], []
+
+        def reacquired(track):
+            """Vết mất dấu lâu hơn REACQUIRE_GAP giây rồi được tìm lại: có thể đã là tờ khác ở cùng chỗ."""
+            return track is not None and now - track["seen"] > REACQUIRE_GAP
+
         for lab, box, p in boxes:
             track = tracker.peek(box)
             if track is None and p < YOLO_CONF:
                 weak_new.append((lab, box, p))  # khung yếu, tờ mới: chỉ nhận nếu SIFT xác nhận (bên dưới)
                 continue
             meta = track.get("meta") if track else None
-            # Cần nhận diện lại khi: tờ mới, đang "?", YOLO (đủ tin cậy) đổi mệnh giá so với lúc lưu (dấu hiệu tờ
-            # khác vừa thế chỗ), hoặc quá --recheck giây. Số thứ tự = mức ưu tiên.
+            # Cần nhận diện lại khi: tờ mới, đang "?", vết vừa mất dấu rồi được tìm lại hoặc YOLO (đủ tin cậy) đổi mệnh
+            # giá so với lúc lưu (dấu hiệu tờ khác vừa thế chỗ – YOLO có thể gọi hai tờ khác nhau cùng một tên), hoặc
+            # quá --recheck giây. Số thứ tự = mức ưu tiên.
             if meta is None:
                 need = 0
             elif meta[0] == UNKNOWN and now - meta[2] >= recheck:
                 need = 1
-            elif p >= YOLO_CONF and lab != meta[3]:
+            elif reacquired(track) or (p >= YOLO_CONF and lab != meta[3]):
                 need = 2
             elif now - meta[2] >= recheck:
                 need = 3
@@ -193,19 +245,24 @@ class Recognizers:
         order = sorted((i for i, x in enumerate(strong) if x[5] is not None), key=lambda i: strong[i][5])
         chosen = set(order[:SIFT_PER_ROUND])
         for i, (lab, box, p, track, meta, need) in enumerate(strong):
+            reacq = reacquired(track)
             if i in chosen:
-                pred, inliers = self.classify_crop(frame, box)
+                pred, inliers, used_clahe = self.classify_crop(frame, box, lab)
                 if pred == UNKNOWN and self.yolo_label:
                     pred, ev = lab, f"YOLO {p:.2f}"
                 else:
-                    ev = (f"{inliers} khớp" if inliers else "màu") if pred != UNKNOWN else "chưa rõ"
-                # Mệnh giá nhận được gần nhất (giữ thêm KNOWN_GRACE giây khi lần này chưa rõ)
-                last = (pred, now) if pred != UNKNOWN else (meta[4], meta[5]) if meta else (None, -1e9)
+                    ev = ((f"{inliers} khớp" if inliers else "màu") + (", CLAHE" if used_clahe else "")
+                          if pred != UNKNOWN else "chưa rõ")
+                # Mệnh giá nhận được gần nhất (giữ thêm KNOWN_GRACE giây khi lần này chưa rõ) – trừ khi vết vừa được
+                # tìm lại sau khi mất dấu: mệnh giá cũ có thể thuộc tờ khác
+                last = ((pred, now) if pred != UNKNOWN else (meta[4], meta[5]) if meta and not reacq
+                        else (None, -1e9))
                 # Chưa kết luận: thử lại sớm (sau UNSURE_RECHECK giây)
                 t_check = now if pred != UNKNOWN else now - recheck + UNSURE_RECHECK
                 meta = (pred, ev, t_check, lab) + last
+                reacq = False
             det = {"quad": box_quad(*box), "conf": p, "vote": True, "reset": True}
-            if meta is None:
+            if meta is None or reacq:
                 det.update(label=UNKNOWN, evidence="đang nhận diện")
             elif meta[0] != UNKNOWN:
                 det.update(label=meta[0], evidence=meta[1])
@@ -221,7 +278,7 @@ class Recognizers:
         # SIFT đủ cặp điểm khớp – YOLO hay kém tin cậy với tờ cầm nghiêng, ở gần camera.
         if weak_new and len(chosen) < SIFT_PER_ROUND and self._fallback_due(now):
             for lab, box, p in weak_new:
-                pred, inliers = self.classify_crop(frame, box)
+                pred, inliers, _ = self.classify_crop(frame, box, lab)
                 if pred != UNKNOWN and inliers >= MIN_INLIERS:
                     out.append({"quad": box_quad(*box), "conf": YOLO_CONF, "vote": True, "reset": True, "label": pred,
                                 "evidence": f"{inliers} khớp",

@@ -14,6 +14,7 @@ import argparse
 import csv
 import json
 import os
+import pickle
 import sys
 import time
 from collections import defaultdict
@@ -22,21 +23,42 @@ from multiprocessing import Pool
 import cv2
 
 from evaluate_multi_note import match
-from evaluate_sift import (MIN_MARGIN, RANSAC_THRESH, ROOT, UNKNOWN, candidates, crop_box, fuse, load_split,
-                           load_templates, resize_max)
+from evaluate_sift import (MIN_MARGIN, RANSAC_THRESH, ROOT, UNKNOWN, candidates, crop_box, evidence_ok, fuse,
+                           load_split, load_templates, resize_max)
 from color_model import ColorModel, hsv_hist
 
 sys.stdout.reconfigure(encoding="utf-8")
 
 YOLO_CONF, YOLO_AGNOSTIC = 0.45, True
-# --so-sanh-luat: các luật khoảng cách thử trên cùng ứng viên SIFT (tên, exclusive, min_margin)
-MARGIN_RULES = [("tổng inlier >= 1,3x (mặc định)", False, MIN_MARGIN)] + [
-    (f"inlier riêng >= {m:g}x".replace(".", ","), True, m) for m in (1.3, 1.5, 2.0, 3.0)]
+# --so-sanh-luat: (tên, exclusive, min_margin, cổng) thử trên cùng ứng viên SIFT. Cổng cho realtime.py – camera có thể
+# thấy vật không phải tiền, nên chỉ báo mệnh giá khi đủ bằng chứng; không đạt -> "không kết luận":
+#   None                  : không kiểm tra
+#   ("inlier", n, yolo)   : kết quả fuse() có >= n inlier, hoặc (yolo=True) nhãn trùng nhãn YOLO
+#   ("hinh", A, hi, lo)   : evidence_ok() – ứng viên SIFT cùng nhãn, khung lệch <= A độ, >= hi inlier hoặc >= lo khi YOLO
+#                           đồng ý; kết quả chỉ theo màu không qua (dùng trong realtime.py)
+MARGIN_RULES = [("tổng inlier >= 1,3x (mặc định)", False, MIN_MARGIN, None)] + [
+    (f"inlier riêng >= {m:g}x".replace(".", ","), True, m, None) for m in (1.3, 1.5, 2.0, 3.0)] + [
+    ("riêng 1,3x + cần >= 8 inlier", True, 1.3, ("inlier", 8, False)),
+    ("riêng 1,3x + >= 8 inlier hoặc trùng YOLO", True, 1.3, ("inlier", 8, True)),
+    ("riêng 1,3x + khung <=45°, >=8 / YOLO >=4", True, 1.3, ("hinh", 45.0, 8, 4))]
+
+
+def gated(cands, lab, n, yolo_lab, gate):
+    """Áp cổng bằng chứng (xem MARGIN_RULES) lên kết quả fuse()."""
+    if gate is None or lab == UNKNOWN:
+        return lab
+    if gate[0] == "inlier":
+        return lab if n >= gate[1] or (gate[2] and lab == yolo_lab) else UNKNOWN
+    return lab if evidence_ok(cands, lab, yolo_lab, *gate[1:]) else UNKNOWN
+
+
 _w = {}
 
 
-def _init(crop_max=0):
+def _init(crop_max=0, clahe=0.0):
+    import evaluate_sift
     cv2.setNumThreads(1)
+    evaluate_sift.CLAHE_CLIP = clahe  # trước load_templates(): ảnh mẫu và vùng cắt cùng được tăng tương phản
     _w["crop_max"] = crop_max
     _w["t"] = load_templates()
     _w["c"] = ColorModel()
@@ -101,12 +123,13 @@ def metrics(items, key, classes):
 
 def compare_rules(split, raw, items, classes, out):
     """So sánh các luật khoảng cách (MARGIN_RULES) trên cùng ứng viên SIFT + màu -> report_margin.txt."""
-    lines = [f"Tập {split}: so sánh luật khoảng cách trên {len(raw)} khung YOLO (cùng ứng viên SIFT + màu)",
+    lines = [f"Tập {split}: so sánh luật khoảng cách / cổng bằng chứng trên {len(raw)} khung YOLO (cùng ứng viên)",
              'hybrid chặt = không kết luận thì bỏ khung (realtime.py hiện "?"); hybrid = giữ nhãn YOLO', "",
-             f"{'Luật':<32} {'Không KL':>8} {'chặt: P':>9} {'R':>7} {'F1':>7} {'hybrid F1':>10}   "
+             f"{'Luật':<42} {'Không KL':>8} {'chặt: P':>9} {'R':>7} {'F1':>7} {'hybrid F1':>10}   "
              + " ".join(f"{c:>7}" for c in classes)]
-    for name, excl, margin in MARGIN_RULES:
-        labs = [fuse(c, r, min_margin=margin, exclusive=excl)[0] for c, r, _ in raw]
+    yolo_flat = [b[0] for it in items for b in it["boxes"]]
+    for name, excl, margin, gate in MARGIN_RULES:
+        labs = [gated(c, *fuse(c, r, min_margin=margin, exclusive=excl), y, gate) for (c, r, _), y in zip(raw, yolo_flat)]
         k = 0
         for it in items:
             sift = labs[k:k + len(it["boxes"])]
@@ -114,7 +137,7 @@ def compare_rules(split, raw, items, classes, out):
             it["r_strict"] = [x if x != UNKNOWN else None for x in sift]
             it["r_hybrid"] = [x if x != UNKNOWN else y for x, y in zip(sift, it["yolo"])]
         ms, mh = metrics(items, "r_strict", classes), metrics(items, "r_hybrid", classes)
-        lines.append(f"{name:<32} {sum(x == UNKNOWN for x in labs):>8} {ms['precision']:>9.2%} "
+        lines.append(f"{name:<42} {sum(x == UNKNOWN for x in labs):>8} {ms['precision']:>9.2%} "
                      f"{ms['recall']:>7.2%} {ms['f1']:>7.2%} {mh['f1']:>10.2%}   "
                      + " ".join(f"{ms['f1_class'][c]:>7.1%}" for c in classes))
     lines.append("(các cột mệnh giá: F1 của hybrid chặt theo mệnh giá, trên khung đúng vị trí)")
@@ -128,20 +151,34 @@ def main():
     parser.add_argument("--split", nargs="+", default=["valid", "test"])
     parser.add_argument("--crop-max", type=int, default=0,
                         help="Thu vùng cắt về cạnh dài tối đa N px trước SIFT (0 = giữ nguyên, như realtime.py cũ)")
+    parser.add_argument("--clahe", type=float, default=0.0,
+                        help="Tăng tương phản CLAHE (clipLimit) trước khi trích SIFT; 0 = tắt")
     parser.add_argument("--so-sanh-luat", action="store_true",
                         help="So sánh các luật khoảng cách (MARGIN_RULES) trên cùng ứng viên SIFT -> report_margin.txt")
+    parser.add_argument("--dung-cache", action="store_true",
+                        help="Dùng ứng viên SIFT đã lưu ở lần chạy trước (cache.pkl) thay vì chạy lại YOLO + SIFT")
     parser.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 2))
     args = parser.parse_args()
     classes = ["1000", "2000", "5000", "10000", "20000", "50000", "100000", "200000", "500000"]
 
     for split in args.split:
+        out = ROOT / "results" / (f"hybrid_{split}" + (f"_crop{args.crop_max}" if args.crop_max else "")
+                                  + (f"_clahe{args.clahe:g}" if args.clahe else ""))
+        out.mkdir(parents=True, exist_ok=True)
+        cache = out / "cache.pkl"
         t0 = time.perf_counter()
-        items = yolo_boxes(split)
-        jobs = [(it["path"], b[1]) for it in items for b in it["boxes"]]
-        print(f"{split}: {len(items)} ảnh, {len(jobs)} khung YOLO ({time.perf_counter() - t0:.0f}s); chạy SIFT + màu...",
-              flush=True)
-        with Pool(args.workers, initializer=_init, initargs=(args.crop_max,)) as pool:
-            raw = pool.map(_candidates, jobs, chunksize=4)
+        if args.dung_cache and cache.exists():
+            items, raw = pickle.loads(cache.read_bytes())
+            jobs = raw
+            print(f"{split}: đọc {len(raw)} khung từ {cache.name}", flush=True)
+        else:
+            items = yolo_boxes(split)
+            jobs = [(it["path"], b[1]) for it in items for b in it["boxes"]]
+            print(f"{split}: {len(items)} ảnh, {len(jobs)} khung YOLO ({time.perf_counter() - t0:.0f}s); "
+                  "chạy SIFT + màu...", flush=True)
+            with Pool(args.workers, initializer=_init, initargs=(args.crop_max, args.clahe)) as pool:
+                raw = pool.map(_candidates, jobs, chunksize=4)
+            cache.write_bytes(pickle.dumps((items, [(c, [(str(a), d) for a, d in r], t) for c, r, t in raw])))
         res = [fuse(c, r) + (t,) for c, r, t in raw]  # luật mặc định, giống classify()
         k = 0
         for it in items:
@@ -164,8 +201,6 @@ def main():
         lines.append("(các cột mệnh giá: F1 nhận diện mệnh giá trên khung đúng vị trí)")
         text = "\n".join(lines)
         print(text + "\n", flush=True)
-        out = ROOT / "results" / (f"hybrid_{split}" + (f"_crop{args.crop_max}" if args.crop_max else ""))
-        out.mkdir(parents=True, exist_ok=True)
         if args.so_sanh_luat:
             compare_rules(split, raw, items, classes, out)
         (out / "report.txt").write_text(text, encoding="utf-8")

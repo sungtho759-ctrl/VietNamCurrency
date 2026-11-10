@@ -186,6 +186,62 @@ Hybrid chặt gần như không nhận sai mệnh giá nhưng bỏ khoảng 10% 
   điểm khớp) luật inlier riêng giảm mạnh số "?" mà không tăng nhãn sai. Bản ghi webcam không có nhãn: "đúng" = 100.000
   hoặc 500 đồng (hai tờ duy nhất được dùng trong buổi thử), mọi nhãn khác tính là sai. Lưu ý chưa có bản ghi webcam
   độc lập để kiểm tra lại lựa chọn này.
+- **Vật không phải tiền: thẻ bảo hiểm y tế bị báo là 2.000 đ.** Hai nguyên nhân cộng lại: (1) YOLO chỉ được huấn
+  luyện trên ảnh có tờ tiền, chưa từng thấy vật khác, nên coi tấm thẻ hình chữ nhật có hoa văn là một tờ tiền; (2) luật
+  "đồng thuận" của SIFT + màu nhận kết quả khi ứng viên SIFT tốt nhất chỉ có ≥ 5 inlier nếu trùng mệnh giá xếp đầu theo
+  màu – thẻ chỉ khớp 5 điểm, màu trắng ngà gần nhất với tờ 2.000. Luật này được dò trên bộ dữ liệu, nơi mọi vùng cắt
+  chắc chắn là tờ tiền (chỉ cần chọn mệnh giá); camera thì có thể thấy bất cứ vật gì. Vì vậy `realtime.py` thêm **cổng
+  bằng chứng**: chỉ báo mệnh giá khi SIFT có ≥ 8 inlier **hoặc** nhãn SIFT + màu trùng nhãn YOLO (hai nguồn độc lập đồng
+  ý); không đạt thì hiện "?" (chế độ `sift` không có YOLO: cần ≥ 8 inlier).
+- **Thẻ ATM vẫn bị báo 2.000 / 20.000 đ với cổng trên** (lần thử sau đó, 4 ảnh): một lần SIFT khớp ngẫu nhiên đúng 8
+  điểm trên chữ của thẻ; hai lần thẻ màu xanh khiến **cả YOLO lẫn màu** cùng nói 20.000 – hai nguồn "đồng ý" nhưng
+  không độc lập (cùng bị màu xanh đánh lừa). Tín hiệu tách bạch là **hình dạng khung homography** (`quad_angle_dev`
+  trong `evaluate_sift.py`, góc lệch 90° lớn nhất): khớp đúng tờ tiền cho khung gần chữ nhật (valid: trung vị 9,9°;
+  webcam: p90 23°), khớp ngẫu nhiên trên thẻ cho khung méo dẹt (64–85° ở cả 5 ảnh thẻ). Cổng mới (`evidence_ok`):
+  chỉ báo mệnh giá khi có ứng viên SIFT cùng mệnh giá với khung lệch ≤ 45° và ≥ 8 inlier, hoặc ≥ 4 inlier khi YOLO cũng
+  nói mệnh giá đó; kết quả chỉ dựa vào màu không được nhận. Để có bộ âm tính ổn định (một ảnh chụp lại không tái hiện
+  được lỗi, vốn chỉ xảy ra ở vài khung hình), mỗi ảnh thẻ được tạo 40 biến thể (xê dịch / co giãn khung, xoay ±8°, mờ,
+  đổi sáng). So trên cùng ứng viên (`evaluate_hybrid.py --so-sanh-luat`, cột cuối của `MARGIN_RULES`):
+
+  | Cổng | F1 hybrid chặt valid / test | Precision valid | Webcam lần 5: đúng / sai / "?" | 200 vùng cắt thẻ: bị báo ra tiền |
+  |---|---|---|---|---|
+  | không có | 90,96% / 91,01% | 97,45% | 69,9% / 9,2% / 20,8% | 39 |
+  | ≥ 8 inlier | 80,42% / 82,46% | 98,65% | 68,8% / 6,4% / 24,9% | – |
+  | ≥ 8 inlier hoặc trùng nhãn YOLO | 91,02% / 91,17% | 98,69% | 69,9% / 7,5% / 22,5% | 12 |
+  | như trên, nhưng khung ≤ 45°; màu chỉ được nhận khi YOLO đồng ý | 89,15% / 89,84% | 98,98% | 68,8% / 6,9% / 24,3% | 8 (đều 20.000) |
+  | **khung ≤ 45°, ≥ 8 inlier hoặc YOLO đồng ý + ≥ 4 inlier** (dùng trong `realtime.py`) | 82,26% / 84,16% | **98,95%** | 67,6% / **5,8%** / 26,6% | **0** |
+
+  Đánh đổi: trên bộ dữ liệu (tờ nhỏ chụp xa, ít điểm khớp, trước đây dựa vào màu) mất ~9 điểm F1 – các tờ này hiện
+  "?" thay vì có nhãn; trên webcam (tờ ở gần) số kết quả đúng gần như giữ nguyên. Với chương trình thời gian thực,
+  báo sai mệnh giá cho vật không phải tiền tệ hơn hiện "?", nên chọn cổng chặt nhất không để lọt thẻ. Kèm theo: vết
+  mất dấu > 0,5 giây rồi được tìm lại thì nhận diện lại ngay (có thể đã là tờ khác ở cùng chỗ). Video thử B (xoay,
+  có khoảng trống; trung bình 3 lần): đúng đủ 51% (trước 62%), **0% nhãn sai, 0 lần tắt**.
+  Hạn chế còn lại: YOLO vẫn khoanh vùng tấm thẻ (hiện khung "?"); muốn YOLO bỏ qua hẳn vật không phải tiền cần huấn
+  luyện lại với ảnh âm (thẻ, giấy tờ, ví…) không gắn nhãn.
+- **Mặt sau tờ 20.000 không nhận được** (thẻ ATM lúc này đã ra "?" đúng như mong muốn): YOLO chắc chắn và đúng
+  (20.000, độ tin cậy 0,91–0,93) nhưng SIFT chỉ khớp 0–4 điểm với ảnh mẫu mặt sau – dưới đèn phòng mặt sau polymer bị
+  bạc màu, tương phản thấp (ảnh mẫu cắt từ ảnh chụp thật trong `data/templates_train/` cũng không khớp được). Trước
+  cổng bằng chứng, các tờ này được nhận nhờ màu + YOLO; cổng (cần thiết để chặn thẻ ATM xanh) chặn luôn đường đó.
+  Cách sửa: **tăng tương phản cục bộ CLAHE** trước khi trích SIFT (`evaluate_sift.CLAHE_CLIP`, cho cả ảnh mẫu và vùng
+  cắt; `evaluate_hybrid.py --clahe`). Luôn bật CLAHE làm SIFT chậm gần gấp đôi (nhiều điểm đặc trưng hơn: ~1.060 so
+  với ~590 điểm mỗi vùng cắt) và làm video thử B tụt còn ~34% khung đúng đủ, nên `realtime.py` chỉ dùng CLAHE **khi
+  lần trích thường ra "?"** (`CLAHE_FALLBACK`). Cùng cổng bằng chứng, chọn trên valid:
+
+  | CLAHE | F1 hybrid chặt valid / test | Webcam lần 5: đúng / sai / "?" | 200 vùng cắt thẻ lọt |
+  |---|---|---|---|
+  | tắt | 82,26% / 84,16% | 67,6% / 5,8% / 26,6% | 0 |
+  | luôn bật, clip 2 | 84,43% / 82,25% | 74,6% / 4,0% / 21,4% | 0 |
+  | luôn bật, clip 4 | 79,89% / 78,75% | 69,4% / 4,0% / 26,6% | 0 |
+  | **chỉ khi ra "?", clip 2** (dùng trong `realtime.py`) | **87,56% / 86,43%** | **78,6%** / 6,9% / **14,5%** | **0** |
+
+  Ảnh webcam: mặt sau tờ 20.000 nhận được ở 2/6 ảnh (trước 0/6; các ảnh còn lại tờ bị cong hoặc nghiêng mạnh);
+  38 ảnh của các lần thử trước: đúng 21 / sai 3 / "?" 14 (trước 19 / 3 / 16); video thử B (trung bình 3 lần): đúng đủ
+  ~49%, không còn lần tắt. Vết mất dấu rồi được tìm lại không còn giữ mệnh giá cũ trong lúc chờ nhận diện lại.
+- **Mặt trước tờ 20.000 từng bị báo 500.000** (23 khớp): mặt trước 20.000 và 500.000 cùng màu xanh, cùng chân dung;
+  chạy lại trên ảnh chụp thì SIFT ra đúng 20.000 (24 khớp) nhưng 500.000 sát nút (22 khớp). Đã thử luật "mâu thuẫn với
+  YOLO" (SIFT chọn khác YOLO trong khi ứng viên của mệnh giá YOLO cũng mạnh gần ngang → "?"): trên valid gần như
+  không đổi, trên bản ghi webcam giảm nhãn sai (4,0% → 2,3% với ρ = 0,7) nhưng giảm mạnh số kết quả đúng (74,6% →
+  68,2%) vì YOLO hay sai trên webcam – chưa đưa vào.
 
 - Khung hình được hiển thị ngay. Việc nhận diện chạy ở luồng riêng trên khung hình mới nhất (khung đến trong lúc đang
   bận thì bỏ qua), nên hình không giật dù nhận diện chậm hơn tốc độ camera.
