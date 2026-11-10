@@ -1,6 +1,6 @@
 """Chuẩn bị dữ liệu cho YOLO: đổi nhãn COCO sang định dạng YOLO, tạo tệp cấu hình tiền.yaml.
 
-- Dùng load_split() nên nhãn đã được sửa lỗi gán tên lớp (mục 2.2.3 của báo cáo).
+- Dùng load_split() nên nhãn đã được sửa lỗi gán tên lớp (xem mục "Ghi chú về dữ liệu" trong README).
 - Tập train được loại ảnh gần trùng với valid/test bằng dHash (cùng ngưỡng 70 bit với build_templates.py) để YOLO không
   được lợi từ rò rỉ dữ liệu; thêm --giu-trung để giữ toàn bộ tập train (chỉ dùng khi đo ảnh hưởng của rò rỉ).
 - Ảnh được tạo liên kết cứng (hard link) nên không tốn thêm dung lượng; nhãn ghi vào data/dataset_yolo/.
