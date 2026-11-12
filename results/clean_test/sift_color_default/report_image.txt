@@ -2,7 +2,7 @@
 Accuracy (không xác định tính là sai): 90.62%
 Tỷ lệ đưa ra kết quả:                  93.75%
 Accuracy trên mẫu có kết quả:          96.67%
-Thời gian trung bình / mẫu:            794 ms
+Thời gian trung bình / mẫu:            438 ms
 
        Lớp  Precision   Recall       F1   Số mẫu
       1000    100.00%  100.00%  100.00%        4

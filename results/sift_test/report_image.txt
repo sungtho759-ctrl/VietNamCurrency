@@ -1,10 +1,11 @@
-===== Anh (ảnh một tờ) (87 mẫu) =====
-Accuracy (không xác định tính là sai): 88.51%
-Tỷ lệ đưa ra kết quả:                  91.95%
-Accuracy trên mẫu có kết quả:          96.25%
-Thời gian trung bình / mẫu:            1156 ms
+===== Image (ảnh một tờ) (97 mẫu) =====
+Accuracy (không xác định tính là sai): 89.69%
+Tỷ lệ đưa ra kết quả:                  92.78%
+Accuracy trên mẫu có kết quả:          96.67%
+Thời gian trung bình / mẫu:            540 ms
 
        Lớp  Precision   Recall       F1   Số mẫu
+       500    100.00%  100.00%  100.00%       10
       1000    100.00%  100.00%  100.00%       16
       2000    100.00%  100.00%  100.00%        9
       5000    100.00%   93.75%   96.77%       16
@@ -14,7 +15,7 @@ Thời gian trung bình / mẫu:            1156 ms
     100000    100.00%   50.00%   66.67%        2
     200000     75.00%   90.00%   81.82%       10
     500000    100.00%   58.33%   73.68%       12
-  Macro F1                       90.14%
+  Macro F1                       91.13%
 
 Các cặp nhầm nhiều nhất (thật -> dự đoán):
    500000 -> khong_xd 3

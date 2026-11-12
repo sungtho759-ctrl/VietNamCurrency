@@ -1,9 +1,18 @@
 # Nhận diện mệnh giá tiền Việt Nam bằng SIFT + RANSAC + màu HSV
 
-Đồ án học phần Thị giác máy tính – Nhóm 06. Hệ thống đối sánh đặc trưng SIFT giữa ảnh đầu vào và ảnh mẫu,
-kiểm chứng bằng homography (RANSAC), chọn ảnh mẫu có nhiều inlier nhất và kết hợp thêm đặc trưng màu HSV khi
-SIFT chưa đủ bằng chứng. Nhận diện 9 mệnh giá: 1.000, 2.000, 5.000, 10.000, 20.000, 50.000, 100.000, 200.000,
-500.000 đồng. Mô hình YOLO dùng để so sánh nhận thêm tờ 500 đồng (10 lớp, xem mục **Ghi chú về dữ liệu**).
+Đồ án học phần Thị giác máy tính – Nhóm 06. Nhận diện **10 mệnh giá** tiền Việt Nam: 500, 1.000, 2.000, 5.000,
+10.000, 20.000, 50.000, 100.000, 200.000 và 500.000 đồng, bằng hai phương pháp để so sánh:
+
+- **Truyền thống – SIFT + RANSAC + màu HSV** (phương pháp chính): đối sánh đặc trưng SIFT giữa ảnh đầu vào và ảnh
+  mẫu, kiểm chứng bằng homography (RANSAC), chọn ảnh mẫu có nhiều inlier nhất và kết hợp màu HSV khi SIFT chưa đủ bằng
+  chứng. Mỗi mệnh giá có 2 ảnh mẫu; mô hình màu học từ tập train.
+- **Học sâu – YOLO11n:** huấn luyện trên cùng tập train.
+
+Bộ dữ liệu Roboflow gốc không có tờ 500 đồng; nhóm tự chụp thêm ảnh tờ 500 và dùng cho cả hai phương pháp (xem mục
+**Ghi chú về dữ liệu**).
+
+Hai phương pháp được so sánh cạnh nhau trên giao diện web **VND Vision AI**, và kết hợp với nhau (YOLO định vị, SIFT +
+màu nhận diện) trong chế độ nhận diện thời gian thực từ webcam.
 
 ## Cấu trúc thư mục
 
@@ -39,7 +48,7 @@ VietNamCurrency/
 ├── data/
 │   ├── templates/                 # 20 ảnh mẫu gốc: <mệnh giá>_<số thứ tự>
 │   ├── templates_train/           # Ảnh mẫu bổ sung cắt từ tập train (build_templates.py)
-│   ├── color_model.npz            # Mô hình màu: histogram HSV của 1.393 tờ train (build_templates.py)
+│   ├── color_model.npz            # Mô hình màu: histogram HSV của 1.474 tờ train, kể cả 75 tờ 500 (build_templates.py)
 │   ├── test_clean.json            # Danh sách ảnh test không rò rỉ (check_leakage.py)
 │   ├── test_images/               # Ảnh thử cho recognize.py và gui.py
 │   └── dataset/                   # Bộ dữ liệu Roboflow (+ 114 ảnh tờ 500 tự chụp): train / valid / test
@@ -52,7 +61,10 @@ VietNamCurrency/
     ├── parameter_search/          # Kết quả dò tham số trên tập valid
     ├── multi_note_valid/, multi_note_test/   # Nhận diện nhiều tờ (+ examples/)
     ├── hybrid_valid*/, hybrid_test*/         # Chế độ kết hợp YOLO + SIFT + màu
-    ├── yolo/                      # Trọng số, biểu đồ huấn luyện và kết quả đánh giá YOLO
+    ├── yolo/
+    │   ├── yolo11n/               # Lần huấn luyện 10 lớp: weights/best.pt, results.csv, biểu đồ trên valid
+    │   ├── evaluation_test/       # Đánh giá trên test bằng cùng chỉ số với SIFT + màu (yolo_evaluate.py)
+    │   └── val_test/              # Biểu đồ của Ultralytics (PR, F1, ma trận nhầm lẫn) trên test
     └── figures/                   # Hình minh họa (pipeline, đối sánh, giao diện, kiểm tra nhãn…)
 ```
 
@@ -73,14 +85,15 @@ nếu xóa thì tạo lại bằng `python src/build_templates.py`.
 Các lệnh chạy từ thư mục dự án (script tự xác định thư mục dự án nên chạy từ đâu cũng được):
 
 ```
-python src/gui.py                          # mở giao diện nhận diện
-python src/web_app.py                      # giao diện web tại http://localhost:5000
-python src/recognize.py                          # nhận diện data/test_images/query.jpg
-python src/recognize.py duong/dan/anh.jpg        # nhận diện ảnh bất kỳ
-python src/evaluate_sift.py --split test         # đánh giá trên tập test -> results/sift_test/
-python src/view_errors.py                            # bảng ảnh các tờ lỗi -> results/sift_test/errors/
-python src/build_templates.py                            # tạo lại ảnh mẫu train + mô hình màu
-python src/tune_thresholds.py --split valid    # dò tham số trên tập valid -> results/parameter_search/
+python src/gui.py                            # giao diện Tkinter
+python src/web_app.py                        # giao diện web tại http://localhost:5000
+python src/realtime.py                       # nhận diện thời gian thực từ webcam
+python src/recognize.py                      # nhận diện data/test_images/query.jpg
+python src/recognize.py duong/dan/anh.jpg    # nhận diện ảnh bất kỳ
+python src/evaluate_sift.py --split test     # đánh giá trên tập test -> results/sift_test/
+python src/view_errors.py                    # bảng ảnh các tờ lỗi -> results/sift_test/errors/
+python src/build_templates.py                # tạo lại ảnh mẫu train + mô hình màu
+python src/tune_thresholds.py --split valid  # dò tham số trên tập valid -> results/parameter_search/
 ```
 
 ## Giao diện
@@ -115,6 +128,8 @@ so sánh cho biết hai kết quả có trùng khớp không và phương pháp 
 - **Tải ảnh lên:** kéo thả, chọn tệp hoặc dán (Ctrl+V); có sẵn các ảnh mẫu trong `data/test_images/`.
 - Máy chủ chỉ nghe trên `127.0.0.1`; camera cần trang mở qua `http://localhost` (hoặc https). Ảnh lớn được thu về cạnh
   dài 800 px trước SIFT; ảnh ≤ 640 px được phóng to ×1,5 như khi đánh giá nhiều tờ.
+- Tùy chọn: `--port 8000` đổi cổng. Dừng máy chủ bằng `Ctrl+C` trong terminal; nếu chạy bằng nút Run (Code Runner) của
+  VS Code thì kết quả nằm ở bảng Output, nơi `Ctrl+C` không có tác dụng, dùng `Ctrl+Alt+M` (Stop Code Run).
 
 ## Nhận diện thời gian thực
 
@@ -156,6 +171,11 @@ Các cơ chế chính (chi tiết, số liệu và nhật ký các lần thử w
   hiện khung xám "?" và không cộng vào tổng tiền. 200 vùng cắt thẻ: không vùng nào bị báo ra tiền (trước: 39).
 - **CLAHE dự phòng:** vùng cắt ra "?" thì trích SIFT lại sau khi tăng tương phản cục bộ (giúp nhận mặt sau tờ 20.000
   polymer bị bạc màu dưới đèn phòng).
+- **Khung YOLO yếu:** khi YOLO không có khung nào ≥ 0,25 (hay gặp với tờ cầm tay trước webcam), thử SIFT + màu trên tối
+  đa 2 khung tin cậy 0,10–0,25 (chỉ nhận khi ≥ 8 cặp khớp), rồi mới chạy SIFT trên toàn khung hình. Trên bản ghi webcam
+  thêm 14 khung nhận đúng nhưng số khung sai tăng từ 2 lên 6; tắt bằng `YOLO_WEAK = YOLO_KEEP` trong `realtime.py`.
+- **Khung hiển thị của SIFT** được cắt theo vùng chứa các điểm khớp (inlier) nên không còn bị homography kéo méo ra
+  ngoài tờ tiền.
 - **Luật khoảng cách theo inlier riêng:** khi so mệnh giá thắng với đối thủ, bỏ các điểm SIFT mà cả hai cùng khớp
   (chân dung, quốc huy, quốc hiệu chung của mọi tờ polymer).
 
@@ -209,6 +229,11 @@ Mọi giá trị tham số được chọn trên tập valid. Lưu ý: phân tí
 và test đã được kiểm tra và không làm kết quả lạc quan hơn, xem mục **Kiểm tra rò rỉ giữa valid và test** (kết quả valid của
 cấu hình mặc định: 87,06%).
 
+Các bảng dưới tính trên **219 ảnh test gốc** của bộ dữ liệu (558 tờ). 10 ảnh tờ 500 tự chụp được báo cáo riêng ở mục
+**Tờ 500 đồng**; số liệu đầy đủ cả 229 ảnh nằm trong `results/sift_test/`. Dòng mặc định đã chạy lại với mô hình màu
+10 lớp; các dòng còn lại là kết quả từ trước khi thêm tờ 500 (mô hình màu 9 lớp). Thêm lớp 500 chỉ làm đổi một dự
+đoán trên 558 tờ gốc: một tờ 5.000 chuyển từ đúng sang "không xác định" (accuracy trước đó 87,46%).
+
 **Theo tờ tiền** (558 tờ). Thời gian đo khi chạy tuần tự mọi cấu hình bằng `src/run_comparison.sh` trên Intel Core
 i5-12450H, một tiến trình, không gồm thời gian đọc ảnh và nạp ảnh mẫu:
 
@@ -219,7 +244,7 @@ i5-12450H, một tiến trình, không gồm thời gian đọc ảnh và nạp 
 | Thêm luật khoảng cách 1,1 (SIFT) | 69,89% | 71,51% | 97,74% | 79,99% | 9 | 436 ms |
 | Chỉ màu, luôn trả lời | 90,68% | 100% | 90,68% | 90,66% | 52 | 1 ms |
 | Chỉ màu, từ chối khi d1/d2 > 0,9 | 84,77% | 89,43% | 94,79% | 89,29% | 26 | 1 ms |
-| **SIFT + màu (mặc định, RANSAC 12 px)** | **87,46%** | 90,14% | 97,02% | **91,76%** | 15 | 409 ms |
+| **SIFT + màu (mặc định, RANSAC 12 px)** | **87,28%** | 89,96% | 97,01% | **91,67%** | 15 | 409 ms |
 | SIFT + 8 ảnh mẫu train + màu | 86,56% | 88,53% | **97,77%** | 91,28% | 11 | 1.251 ms |
 
 Chỉ màu, nếu luôn trả lời, có accuracy cao nhất nhưng nhận sai 52 tờ (gấp ~3,5 lần SIFT + màu). Ở cùng quy tắc chọn
@@ -235,6 +260,19 @@ accuracy trên mẫu có kết quả. Chỉ màu cũng cần biết trước vù
 | Thêm luật khoảng cách 1,1 (SIFT) | 79,31% | 85,06% | 93,24% | 5 |
 | **SIFT + màu trong khung SIFT (mặc định)** | **88,51%** | 91,95% | 96,25% | 3 |
 | SIFT + 8 ảnh mẫu train + màu | 74,71% | 74,71% | 100% | 0 |
+
+**Tờ 500 đồng (SIFT + màu).** Hai ảnh mẫu (mặt trước và mặt sau) nằm trong `data/templates/`, mô hình màu học thêm 75
+tờ 500 trong ảnh train tự chụp. Kết quả với cấu hình mặc định:
+
+| Tập | Theo tờ tiền (vùng cắt) | Theo ảnh một tờ | Tự tìm mọi tờ (IoU ≥ 0,5) |
+|---|---|---|---|
+| Test (lượt 10, 10 tờ) | **10/10** đúng | **10/10** đúng | 8/10 đúng, 2 khung lệch vị trí; 10/10 ảnh đúng tổng tiền |
+| Valid (lượt 2, 8; 19 tờ) | 17/19 đúng, 2 "không xác định" | 9/10 đúng, 1 "không xác định" | – |
+
+Không có tờ nào bị nhận sai mệnh giá. `build_templates.py` cũng cắt được 6 ảnh mẫu tờ 500 từ ảnh train
+(`data/templates_train/500_t*.jpg`), nhưng thêm chúng vào không cải thiện kết quả trên valid, nên cấu hình mặc định
+vẫn chỉ dùng 2 ảnh mẫu như các mệnh giá khác. Chỉ có một tờ 500 thật được chụp, nên kết quả này chưa nói lên khả năng
+nhận các tờ 500 khác.
 
 ## Nhận diện nhiều tờ trong một ảnh
 
@@ -259,9 +297,9 @@ Một khung dự đoán đúng vị trí khi khung bao của nó có IoU ≥ 0,5
 
 | Ảnh | Số ảnh / tờ | Recall (vị trí + mệnh giá) | Precision (vị trí + mệnh giá) | F1 | Ảnh đếm đúng số tờ | Ảnh đúng tổng tiền | Thời gian / ảnh |
 |---|---|---|---|---|---|---|---|
-| Tất cả | 218 / 558 | 62,37% | 93,05% | 74,68% | 58,72% | 55,50% | 2,4 s |
-| Có 1 tờ | 87 / 87 | 71,26% | 81,58% | 76,07% | 82,76% | 75,86% | 3,4 s |
-| Có nhiều tờ | 131 / 471 | 60,72% | 95,97% | 74,38% | 42,75% | 41,98% | 1,8 s |
+| Tất cả | 218 / 558 | 62,37% | 92,80% | 74,60% | 59,17% | 55,50% | 2,0 s |
+| Có 1 tờ | 87 / 87 | 71,26% | 80,52% | 75,61% | 83,91% | 75,86% | 2,8 s |
+| Có nhiều tờ | 131 / 471 | 60,72% | 95,97% | 74,38% | 42,75% | 41,98% | 1,5 s |
 
 Nhận xét: hệ thống hầu như **không nhận thừa** (precision ~96% ở ảnh nhiều tờ) mà chủ yếu **bỏ sót** tờ nhỏ, mờ
 (cảnh chụp xa, mỗi tờ ~70 px) – ở ảnh nhiều tờ, số tờ dự đoán không bao giờ vượt số tờ thật. Thỉnh thoảng
@@ -289,11 +327,11 @@ python src/compare_boxes.py        # recall theo kích thước tờ, hình đ�
 
 | Kịch bản | SIFT + màu | YOLO11n |
 |---|---|---|
-| Tự tìm mọi tờ: F1 (vị trí + mệnh giá) | 74,68% | **93,35%** |
+| Tự tìm mọi tờ: F1 (vị trí + mệnh giá) | 74,60% | **93,35%** |
 | Tự tìm mọi tờ: ảnh đúng tổng tiền | 55,50% | **79,82%** |
-| Tự tìm mọi tờ: thời gian / ảnh | 2,4 s | **0,10 s** (8 luồng), 0,15 s (1 luồng) |
-| Đã biết vị trí: accuracy (558 tờ) | 87,46% | **88,17%** (YOLO chạy trên ảnh đầy đủ) |
-| Đã biết vị trí: Macro-F1 | **91,76%** | 90,76% |
+| Tự tìm mọi tờ: thời gian / ảnh | 2,0 s | **0,10 s** (8 luồng), 0,15 s (1 luồng) |
+| Đã biết vị trí: accuracy (558 tờ) | 87,28% | **88,17%** (YOLO chạy trên ảnh đầy đủ) |
+| Đã biết vị trí: Macro-F1 | **91,67%** | 90,76% |
 | Ảnh một tờ, cùng quy tắc ngưỡng: accuracy (87 ảnh) | **88,51%** | 87,36% (89,66% nếu luôn trả lời, sai 9 tờ) |
 
 Trên vùng cắt theo khung bao, YOLO chỉ đạt 61,11% khi luôn trả lời. YOLO kém ở tờ 100.000 và 500.000 đồng (F1 80,34% và
@@ -304,6 +342,13 @@ Trên vùng cắt theo khung bao, YOLO chỉ đạt 61,11% khi luôn trả lời
 **Tờ 500 đồng** (10 ảnh test, một lượt chụp trên nền không có trong train): YOLO nhận đúng cả 10 tờ (AP50 0,995; một
 ảnh thừa một khung trùng). Mô hình 9 lớp trước đó nhận 7 tờ thành 200.000, 2 tờ thành 50.000 và bỏ sót 2 tờ. Chỉ có
 một tờ 500 dùng cho cả train/valid/test, nên kết quả này chưa cho biết khả năng nhận các tờ 500 khác.
+
+**Chỉ số phát hiện của Ultralytics** (mAP, IoU 0,5): valid 0,969 (biểu đồ trong `results/yolo/yolo11n/`, cũng là tập
+dùng để chọn `best.pt` nên hơi lạc quan), **test 0,972**, mAP50-95 test 0,871 (`results/yolo/val_test/`, nên dùng hình
+này khi báo cáo). AP50 trên test theo lớp: thấp nhất là 500.000 (0,911), 100.000 (0,935) và 10.000 (0,956) – đều là tiền
+polymer, khớp với lỗi nhầm mặt trước 100.000 thành 500.000 khi thử webcam; các lớp khác ≥ 0,98. Đường PR có dạng bậc
+thang và rơi thẳng xuống ở mép phải là bình thường: mỗi bậc là một dự đoán đúng/sai, chỗ rơi là recall cao nhất đạt
+được; lớp 500 chỉ có 19 tờ trong valid nên bậc rất thô.
 
 So với mô hình 9 lớp trước khi thêm tờ 500 (cùng 219 ảnh test): F1 tự tìm mọi tờ 90,63% → 93,35%, ảnh đúng tổng tiền
 75,23% → 79,82%; trên phần test sạch F1 gần như không đổi (97,47% → 97,05%).
@@ -316,7 +361,7 @@ So với mô hình 9 lớp trước khi thêm tờ 500 (cùng 219 ảnh test): F
 - **Rò rỉ dữ liệu:** Roboflow chia ngẫu nhiên các khung hình liên tiếp và bản tăng cường của cùng ảnh gốc vào cả ba
   tập. `build_templates.py` loại mọi ảnh train có mã dHash 256 bit cách ảnh valid/test bất kỳ ≤ 70 bit trước khi tạo ảnh
   mẫu và mô hình màu (còn 559/1.537 ảnh train). Rò rỉ giữa valid và test được kiểm tra riêng ở mục dưới.
-- **Tờ 500 đồng (chỉ dùng cho YOLO):** bộ dữ liệu gốc không có tờ 500, nên nhóm tự chụp 114 ảnh **một tờ** trong 11
+- **Tờ 500 đồng:** bộ dữ liệu gốc không có tờ 500, nên nhóm tự chụp 114 ảnh **một tờ** trong 11
   lượt (mỗi lượt một nền / ánh sáng), một số ảnh chụp chung với tờ khác. Ảnh được thu về 640×640 như ảnh Roboflow, khung
   gán bằng CVAT (gợi ý từ mô hình cũ rồi sửa tay), lớp `500` có `category_id` 10. Chia **theo lượt chụp** để ảnh cùng
   lượt không nằm ở hai tập: train 85 ảnh (lượt 0, 1, 3, 4, 5, 6, 7, 9), valid 19 (lượt 2, 8), test 10 (lượt 10); lượt
@@ -343,9 +388,9 @@ không chạy lại mô hình.
 
 | Chỉ số (tập test) | Toàn bộ | Sạch | Rò rỉ |
 |---|---|---|---|
-| SIFT + màu, theo tờ tiền: accuracy | 87,46% | **96,62%** | 80,69% |
+| SIFT + màu, theo tờ tiền: accuracy | 87,28% | **96,62%** | 80,37% |
 | SIFT + màu, ảnh một tờ: accuracy | 88,51% (87 ảnh) | **90,62%** (32 ảnh) | 87,27% (55 ảnh) |
-| SIFT + màu, tự tìm mọi tờ: F1 | 74,68% | **83,10%** | 67,59% |
+| SIFT + màu, tự tìm mọi tờ: F1 | 74,60% | **83,10%** | 67,46% |
 | YOLO11n, tự tìm mọi tờ: F1 | 93,35% | **97,05%** | 90,60% |
 
 Kết luận:
