@@ -42,7 +42,13 @@ sys.stdout.reconfigure(encoding="utf-8")
 YOLO_WEIGHTS = ROOT / "results" / "yolo" / "yolo11n" / "weights" / "best.pt"
 # Ngưỡng chọn trên tập valid khi đánh giá (results/yolo/evaluation_test/results.json, nhiều tờ: F1 cao nhất).
 # Ngưỡng kép chống chập chờn: tờ mới cần >= YOLO_CONF, tờ đang bám theo chỉ cần >= YOLO_KEEP.
-YOLO_CONF, YOLO_KEEP, YOLO_AGNOSTIC = 0.45, 0.25, True
+YOLO_CONF, YOLO_KEEP, YOLO_AGNOSTIC = 0.35, 0.25, True
+# Khung YOLO yếu (YOLO_WEAK <= tin cậy < YOLO_KEEP): không hiển thị, chỉ dùng khi YOLO không có khung nào >= YOLO_KEEP –
+# cắt vùng đó cho SIFT + màu trước khi phải chạy SIFT trên toàn khung hình. Tờ cầm tay sát camera, bị gập, ngược sáng
+# YOLO thường chỉ cho 0,1–0,3 nhưng vẫn đúng vị trí; SIFT trên vùng cắt (độ phân giải gốc) đủ điểm hơn nhiều so với
+# toàn khung hình thu về 640 px (ảnh webcam tờ 2.000: vùng cắt 45 cặp khớp 2.000 / 27 cặp 1.000, toàn khung hình 15 / 17
+# -> báo nhầm 1.000). Chỉ nhận theo cổng bằng chứng chặt (>= EVIDENCE_MIN cặp khớp, không dựa vào nhãn YOLO).
+YOLO_WEAK, WEAK_MAX = 0.10, 2
 SIFT_MAX_SIDE = 640          # thu nhỏ khung hình trước khi trích SIFT để nhanh hơn
 HYBRID_CROP_MAX = 400        # hybrid: thu vùng cắt về cạnh dài tối đa N px trước SIFT + màu (0 = giữ nguyên).
 # Vùng cắt webcam lớn (~600 px) khớp nhiều chi tiết chung giữa các mệnh giá (chân dung, quốc huy) làm luật khoảng
@@ -143,27 +149,41 @@ class Recognizers:
     def sift(self, frame):
         small = resize_max(frame, SIFT_MAX_SIDE)
         s = frame.shape[1] / small.shape[1]
-        label, inliers, quad = classify_image(small, self.templates, self.color, exclusive=MARGIN_EXCLUSIVE)
-        # Cổng bằng chứng (không có YOLO): >= EVIDENCE_MIN inlier và khung gần chữ nhật
+        label, inliers, quad, rect = classify_image(small, self.templates, self.color, inlier_rect=True,
+                                                    exclusive=MARGIN_EXCLUSIVE)
+        # Cổng bằng chứng (không có YOLO): >= EVIDENCE_MIN inlier và khung homography gần chữ nhật
         if label == UNKNOWN or quad is None or inliers < EVIDENCE_MIN or quad_angle_dev(quad) > EVIDENCE_ANGLE:
             return []
-        return [{"label": label, "quad": (np.float32(quad) * s).tolist(), "conf": 1.0, "inliers": inliers,
+        # Vẽ khung bao các điểm khớp: khung homography ngoại suy từ ảnh mẫu vượt ra ngoài tờ bị gập / che một phần
+        return [{"label": label, "quad": (np.float32(rect or quad) * s).tolist(), "conf": 1.0, "inliers": inliers,
                  "evidence": f"{inliers} khớp" if inliers else "màu"}]
 
     def _yolo(self, frame):
-        r = self.yolo.predict(frame, conf=YOLO_KEEP, imgsz=640, agnostic_nms=YOLO_AGNOSTIC, device="cpu",
+        """Khung YOLO tin cậy >= YOLO_WEAK (NMS chạy trên cả khung yếu: khung mạnh không bị khung yếu đè mất)."""
+        r = self.yolo.predict(frame, conf=YOLO_WEAK, imgsz=640, agnostic_nms=YOLO_AGNOSTIC, device="cpu",
                               verbose=False)[0]
         return [(self.yolo.names[int(c)], [b[0], b[1], b[2] - b[0], b[3] - b[1]], p)
                 for b, c, p in zip(r.boxes.xyxy.tolist(), r.boxes.cls.tolist(), r.boxes.conf.tolist())]
 
-    def yolo_boxes(self, frame):
-        """Khung YOLO; không thấy tờ nào thì thử lại trên khung hình xoay 180° (YOLO hay bỏ sót tờ lộn ngược)."""
-        out = self._yolo(frame)
-        if not out:
-            H, W = frame.shape[:2]
-            out = [(lab, [W - b[0] - b[2], H - b[1] - b[3], b[2], b[3]], p)
-                   for lab, b, p in self._yolo(cv2.rotate(frame, cv2.ROTATE_180))]
-        return out
+    def yolo_boxes(self, frame, with_weak=False):
+        """Khung YOLO >= YOLO_KEEP; không thấy tờ nào thì thử lại trên khung hình xoay 180° (YOLO hay bỏ sót tờ lộn
+        ngược). with_weak=True: trả thêm các khung yếu (YOLO_WEAK..YOLO_KEEP) của cả hai chiều, khi không có khung mạnh."""
+        H, W = frame.shape[:2]
+        found = self._yolo(frame)
+        strong = [x for x in found if x[2] >= YOLO_KEEP]
+        weak = [x for x in found if x[2] < YOLO_KEEP]
+        if not strong:
+            flipped = [(lab, [W - b[0] - b[2], H - b[1] - b[3], b[2], b[3]], p)
+                       for lab, b, p in self._yolo(cv2.rotate(frame, cv2.ROTATE_180))]
+            strong = [x for x in flipped if x[2] >= YOLO_KEEP]
+            weak += [x for x in flipped if x[2] < YOLO_KEEP]
+        if not with_weak:
+            return strong
+        chosen = []
+        for x in sorted(weak, key=lambda x: -x[2]):  # bỏ khung yếu trùng chỗ (cùng tờ thấy ở cả hai chiều)
+            if all(iou(x[1], y[1]) < 0.5 for y in chosen):
+                chosen.append(x)
+        return strong, ([] if strong else chosen[:WEAK_MAX])
 
     def yolo_mode(self, frame):
         return [{"label": lab, "quad": box_quad(*box), "conf": p, "evidence": f"{p:.2f}"}
@@ -210,9 +230,9 @@ class Recognizers:
         """
         now = time.perf_counter() if now is None else now
         out = []
-        boxes = self.yolo_boxes(frame)
+        boxes, weak = self.yolo_boxes(frame, with_weak=True)
         if not boxes:
-            return self.sift_fallback(frame, now)
+            return self.sift_fallback(frame, now, weak)
         weak_new, strong = [], []
 
         def reacquired(track):
@@ -291,11 +311,27 @@ class Recognizers:
         self._last_fallback = now
         return True
 
-    def sift_fallback(self, frame, now):
-        """YOLO không thấy tờ nào: SIFT toàn khung hình (bất biến với góc xoay), chỉ nhận khi đủ cặp điểm khớp
-        (không nhận kết luận chỉ dựa vào màu – tránh "thấy" tờ tiền trong cảnh trống)."""
+    def sift_fallback(self, frame, now, weak=()):
+        """YOLO không có khung nào >= YOLO_KEEP: thử SIFT + màu trên các khung YOLO yếu (xem YOLO_WEAK), không được thì
+        SIFT toàn khung hình (bất biến với góc xoay). Chỉ nhận khi đủ cặp điểm khớp (không nhận kết luận chỉ dựa vào
+        màu – tránh "thấy" tờ tiền trong cảnh trống)."""
         if not self._fallback_due(now):
             return []
+        dets = []
+        for lab, box, p in weak:
+            # Không truyền nhãn YOLO: khung yếu không đủ tin để hạ ngưỡng cổng bằng chứng xuống EVIDENCE_YOLO
+            pred, inliers, used_clahe = self.classify_crop(frame, box)
+            if pred != UNKNOWN and inliers >= MIN_INLIERS:
+                dets.append({"label": pred, "quad": box_quad(*box), "conf": YOLO_CONF, "inliers": inliers,
+                             "evidence": f"{inliers} khớp" + (", CLAHE" if used_clahe else "") + f", YOLO yếu {p:.2f}",
+                             "hold": SIFT_HOLD})
+        if dets:
+            # Hai khung yếu (một to, một nhỏ) có thể cùng chứa một tờ: giữ khung nhiều cặp khớp hơn
+            kept = []
+            for d in sorted(dets, key=lambda d: -d["inliers"]):
+                if all(overlap(quad_bbox(d["quad"]), quad_bbox(k["quad"])) < 0.8 for k in kept):
+                    kept.append(d)
+            return kept
         dets = self.sift(frame)
         # Vết do SIFT dự phòng tìm ra chỉ được xác nhận lại mỗi SIFT_FALLBACK_EVERY giây: giữ lâu hơn để không chớp
         return [dict(d, evidence=d["evidence"] + ", SIFT", hold=SIFT_HOLD) for d in dets if d["inliers"] >= MIN_INLIERS]

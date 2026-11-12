@@ -5,12 +5,13 @@
   được lợi từ rò rỉ dữ liệu; thêm --giu-trung để giữ toàn bộ tập train (chỉ dùng khi đo ảnh hưởng của rò rỉ).
 - Ảnh được tạo liên kết cứng (hard link) nên không tốn thêm dung lượng; nhãn ghi vào data/dataset_yolo/.
 
-Chạy:  python src/yolo_prepare.py
+Chạy:  python src/yolo_prepare.py          # thêm --zip để đóng gói colab_yolo/dataset_yolo.zip cho Colab
 """
 import argparse
 import os
 import shutil
 import sys
+import zipfile
 from collections import defaultdict
 
 import cv2
@@ -21,7 +22,8 @@ from build_templates import dhash
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-LOP = ["1000", "2000", "5000", "10000", "20000", "50000", "100000", "200000", "500000"]
+# Lớp "500" thêm sau nên đặt cuối để giữ nguyên chỉ số của 9 lớp gốc
+LOP = ["1000", "2000", "5000", "10000", "20000", "50000", "100000", "200000", "500000", "500"]
 
 
 def lien_ket(src, dst):
@@ -61,6 +63,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--nguong-trung", type=int, default=70)
     parser.add_argument("--giu-trung", action="store_true", help="Giữ cả ảnh train gần trùng valid/test")
+    parser.add_argument("--zip", action="store_true", help="Đóng gói thêm colab_yolo/<tên>.zip để tải lên Colab")
     args = parser.parse_args()
 
     ten = "dataset_yolo_full_train" if args.giu_trung else "dataset_yolo"
@@ -88,6 +91,19 @@ def main():
         f"path: {out_root.as_posix()}\ntrain: train/images\nval: valid/images\ntest: test/images\nnames:\n{ten_lop}\n",
         encoding="utf-8")
     print("Đã ghi", out_root / "currency.yaml")
+    if args.zip:
+        dong_goi(out_root, ROOT / "colab_yolo" / f"{ten}.zip")
+
+
+def dong_goi(out_root, dich):
+    """Nén ảnh + nhãn vào thư mục dataset_yolo/ trong zip; currency.yaml trỏ tới /content/dataset_yolo trên Colab."""
+    with zipfile.ZipFile(dich, "w", zipfile.ZIP_STORED) as z:
+        for tep in sorted(out_root.rglob("*")):
+            if tep.is_file() and tep.suffix != ".cache" and tep.name != "currency.yaml":
+                z.write(tep, "dataset_yolo/" + tep.relative_to(out_root).as_posix())
+        yaml = (out_root / "currency.yaml").read_text(encoding="utf-8").split("\n", 1)[1]
+        z.writestr("dataset_yolo/currency.yaml", "path: /content/dataset_yolo\n" + yaml)
+    print("Đã ghi", dich)
 
 
 if __name__ == "__main__":

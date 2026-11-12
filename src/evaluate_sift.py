@@ -61,6 +61,9 @@ def resize_max(img, max_side):
 # 0 = tắt (mặc định của mọi bảng đánh giá). Đặt trước khi gọi load_templates(). Xem realtime.py.
 CLAHE_CLIP = 0.0
 
+# classify_image(inlier_rect=True): hệ số phóng to hình chữ nhật bao điểm khớp trước khi cắt khung homography
+INLIER_RECT_SCALE = 1.8
+
 
 def extract(img):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -95,15 +98,15 @@ def load_templates(k_train=K_TRAIN):
     return templates
 
 
-def candidates(query, templates, ransac_thresholds=(5.0,)):
+def candidates(query, templates, ransac_thresholds=(5.0,), features=None):
     """Đối sánh query với từng ảnh mẫu, trả về các giả thuyết hợp lệ về hình học.
 
     Kết quả: {ngưỡng RANSAC: [(nhãn, số inlier, tỷ lệ inlier, diện tích khung / diện tích ảnh, tên mẫu, 4 góc khung,
     chỉ số các điểm SIFT của query là inlier), ...]}.
-    Tách riêng bước này để dò ngưỡng mà không phải chạy lại SIFT.
+    Tách riêng bước này để dò ngưỡng mà không phải chạy lại SIFT. features: (điểm khóa, mô tả) đã trích sẵn của query.
     """
     result = {thr: [] for thr in ransac_thresholds}
-    kp_query, des_query = extract(query)
+    kp_query, des_query = extract(query) if features is None else features
     if des_query is None or len(des_query) < 2:
         return result
 
@@ -260,12 +263,16 @@ def locate(cands, max_area=MAX_AREA):
     return max(valid, key=lambda c: (c[1], c[2]), default=None)
 
 
-def classify_image(img, templates, color_model=None, ransac=RANSAC_THRESH, **params):
+def classify_image(img, templates, color_model=None, ransac=RANSAC_THRESH, inlier_rect=False, **params):
     """Nhận diện trên cả ảnh: SIFT định vị tờ tiền, màu lấy trong khung homography của giả thuyết mạnh nhất.
 
-    Trả về (nhãn, số inlier, 4 góc khung hoặc None).
+    Trả về (nhãn, số inlier, 4 góc khung hoặc None). inlier_rect=True: trả thêm phần tử thứ tư – khung để hiển thị:
+    khung homography cắt bớt phần nằm ngoài hình chữ nhật (thẳng) bao các điểm khớp phóng to INLIER_RECT_SCALE lần (danh
+    sách đỉnh hoặc None). Khi tờ bị gập / che một phần, khung homography ngoại suy từ ảnh mẫu có thể vượt xa tờ tiền;
+    còn khung bao riêng các điểm khớp lại chỉ phủ vùng có chi tiết khớp (chân dung, số mệnh giá), nhỏ hơn tờ nhiều.
     """
-    cands = candidates(img, templates, (ransac,))[ransac]
+    kp, des = extract(img)
+    cands = candidates(img, templates, (ransac,), features=(kp, des))[ransac]
     top = locate(cands, params.get("max_area", MAX_AREA))
     rank = None
     if color_model is not None and top is not None:
@@ -276,10 +283,20 @@ def classify_image(img, templates, color_model=None, ransac=RANSAC_THRESH, **par
             rank = color_model.rank(hsv_hist(img[y0:y1, x0:x1]))
     label, count = fuse(cands, rank, **params)
     if label == UNKNOWN:
-        return label, count, None
+        return (label, count, None, None) if inlier_rect else (label, count, None)
     box = max((c for c in cands if c[0] == label and c[3] <= params.get("max_area", MAX_AREA)),
               key=lambda c: (c[1], c[2]), default=None)
-    return label, count, box[5] if box else None
+    quad = box[5] if box else None
+    if not inlier_rect:
+        return label, count, quad
+    shown = None
+    if box and len(box[6]) >= 3:
+        pts = np.float32([kp[i].pt for i in box[6]])
+        c, half = (pts.min(0) + pts.max(0)) / 2, (pts.max(0) - pts.min(0)) / 2 * INLIER_RECT_SCALE
+        rect = np.float32([c - half, [c[0] + half[0], c[1] - half[1]], c + half, [c[0] - half[0], c[1] + half[1]]])
+        area, inter = cv2.intersectConvexConvex(np.float32(quad), rect)
+        shown = (inter.reshape(-1, 2) if area > 0 and inter is not None else rect).round(1).tolist()
+    return label, count, quad, shown
 
 
 def quad_iou(a, b):
@@ -496,7 +513,8 @@ def load_split(split):
     # Tên lớp trong file COCO bị gán lệch: id 1..9 thực chất ứng với tên
     # mệnh giá sắp theo thứ tự chuỗi (1000, 10000, 100000, 2000, ...).
     # Đã kiểm tra bằng mắt trên ảnh cắt của từng lớp.
-    names = sorted(c["name"] for c in coco["categories"] if c["name"].isdigit())
+    # Chỉ áp dụng cho 9 lớp gốc (id 1..9); lớp thêm sau (id 10 = '500') đã gán đúng tên.
+    names = sorted(c["name"] for c in coco["categories"] if c["name"].isdigit() and c["id"] <= 9)
     cat = {c["id"]: c["name"] for c in coco["categories"]}
     cat.update({i + 1: name for i, name in enumerate(names)})
     images = {im["id"]: im for im in coco["images"]}

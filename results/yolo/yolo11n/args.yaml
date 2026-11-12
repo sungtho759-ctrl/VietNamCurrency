@@ -1,7 +1,7 @@
 task: detect
 mode: train
 model: yolo11n.pt
-data: /content/dataset_yolo/tien.yaml
+data: /content/dataset_yolo/currency.yaml
 epochs: 60
 time: null
 patience: 15
@@ -12,8 +12,8 @@ save_period: -1
 cache: ram
 device: "0"
 workers: 2
-project: /content/ket_qua
-name: yolo11n
+project: /content/results
+name: yolo11n_500
 exist_ok: true
 pretrained: true
 cls_remap: true
@@ -111,4 +111,4 @@ auto_augment: randaugment
 erasing: 0.4
 cfg: null
 tracker: tracktrack.yaml
-save_dir: /content/ket_qua/yolo11n
+save_dir: /content/results/yolo11n_500

@@ -5,3 +5,5 @@
 /results/realtime
 __pycache__/
 /results/hybrid_*/cache.pkl
+/data/label_500
+/data/raw_500

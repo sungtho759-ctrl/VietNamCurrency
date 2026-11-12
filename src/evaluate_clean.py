@@ -103,11 +103,15 @@ def main():
     clean = set(info["khoang_cach_toi_valid"]) - leaked
 
     _, cat, images, anns = load_split("test")
+    anns = [a for a in anns if images[a["image_id"]]["file_name"] in info["khoang_cach_toi_valid"]]
     files_with_notes = {images[a["image_id"]]["file_name"] for a in anns}
     n_clean_notes = sum(images[a["image_id"]]["file_name"] in clean for a in anns)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    parts = {"Toàn bộ": lambda f: True, "Sạch": lambda f: f in clean, "Rò rỉ": lambda f: f in leaked}
+    # "Toàn bộ" = các ảnh test đã kiểm tra rò rỉ (219 ảnh gốc Roboflow); ảnh thêm sau (tờ 500 tự chụp) không tính,
+    # để SIFT + màu và YOLO được so trên cùng tập ảnh.
+    goc = set(info["khoang_cach_toi_valid"])
+    parts = {"Toàn bộ": lambda f: f in goc, "Sạch": lambda f: f in clean, "Rò rỉ": lambda f: f in leaked}
     lines = [f"# Kết quả trên tập test sạch (ngưỡng dHash {thr} bit)", "",
              f"Ảnh test có tờ tiền: {len(files_with_notes)} – sạch {len(files_with_notes & clean)} ảnh "
              f"({n_clean_notes} tờ), rò rỉ {len(files_with_notes & leaked)} ảnh "

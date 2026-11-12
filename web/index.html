@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VND Vision AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="logo.svg" type="image/svg+xml">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="logo.svg" alt="" class="brand-logo" width="40" height="40">
+      <div>
+        <h1>VND Vision AI</h1>
+        <p>Nhận diện mệnh giá tiền Việt Nam · so sánh phương pháp truyền thống và học sâu</p>
+      </div>
+    </div>
+    <div class="status-pills" aria-live="polite">
+      <span class="pill" id="pill-sift"><i></i>SIFT + màu</span>
+      <span class="pill" id="pill-yolo"><i></i>YOLO11n</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- ============ Khu vực đầu vào ============ -->
+    <section class="panel input-zone" aria-labelledby="input-title">
+      <div class="panel-head">
+        <h2 id="input-title">Đầu vào</h2>
+        <div class="tabs" role="tablist">
+          <button role="tab" id="tab-camera" aria-selected="true" aria-controls="pane-camera">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h3l2-2.5h6L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="3.6"/></svg>
+            Quét trực tiếp
+          </button>
+          <button role="tab" id="tab-upload" aria-selected="false" aria-controls="pane-upload">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+            Tải ảnh lên
+          </button>
+        </div>
+      </div>
+
+      <!-- Tab 1: camera -->
+      <div class="pane" id="pane-camera" role="tabpanel" aria-labelledby="tab-camera">
+        <div class="stage" id="cam-stage">
+          <video id="video" playsinline muted></video>
+          <div class="guide" id="guide" aria-hidden="true">
+            <span class="c tl"></span><span class="c tr"></span><span class="c bl"></span><span class="c br"></span>
+            <em>Đặt tờ tiền vào khung</em>
+          </div>
+          <div class="stage-empty" id="cam-empty">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h3l2-2.5h6L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="3.6"/></svg>
+            <p>Camera đang tắt</p>
+            <button class="btn primary" id="btn-cam-start">Bật camera</button>
+          </div>
+          <span class="live-badge" id="live-badge" hidden>● TRỰC TIẾP</span>
+        </div>
+        <div class="controls">
+          <button class="btn primary" id="btn-snap" disabled>Chụp &amp; nhận diện</button>
+          <label class="switch"><input type="checkbox" id="chk-live"><span></span>Nhận diện liên tục</label>
+          <label class="switch"><input type="checkbox" id="chk-roi"><span></span>Chỉ xét vùng trong khung</label>
+          <select id="sel-camera" class="select" hidden aria-label="Chọn camera"></select>
+          <button class="btn ghost" id="btn-cam-stop" disabled>Tắt camera</button>
+        </div>
+        <p class="hint" id="cam-hint">Camera chỉ chạy trên trình duyệt của bạn; khung hình được gửi tới máy chủ cục bộ để nhận diện.</p>
+      </div>
+
+      <!-- Tab 2: tải ảnh -->
+      <div class="pane" id="pane-upload" role="tabpanel" aria-labelledby="tab-upload" hidden>
+        <label class="dropzone" id="dropzone" tabindex="0">
+          <input type="file" id="file" accept="image/*" hidden>
+          <img id="preview" alt="Ảnh đã chọn" hidden>
+          <div class="dz-empty" id="dz-empty">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="m4 18 5-5 3.5 3.5L15 14l5 4"/></svg>
+            <p><strong>Kéo thả ảnh vào đây</strong><br>hoặc <span class="link">chọn tệp từ thiết bị</span></p>
+            <small>JPG, PNG, WEBP · tối đa 15 MB</small>
+          </div>
+        </label>
+        <div class="controls">
+          <button class="btn primary" id="btn-run" disabled>Nhận diện lại</button>
+          <button class="btn ghost" id="btn-pick">Chọn ảnh khác</button>
+          <span class="file-name" id="file-name"></span>
+        </div>
+        <div class="samples" id="samples" hidden>
+          <span>Thử nhanh với ảnh mẫu:</span>
+          <div id="sample-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ Kết quả ============ -->
+    <section class="panel result-zone" aria-labelledby="result-title">
+      <div class="panel-head">
+        <h2 id="result-title">Kết quả nhận diện</h2>
+        <span class="muted" id="result-source">Chưa có ảnh</span>
+      </div>
+
+      <div class="compare" id="compare">
+        <div class="stat"><span>Truyền thống</span><div id="cmp-sift"><b>—</b></div></div>
+        <div class="stat"><span>YOLO11n</span><div id="cmp-yolo"><b>—</b></div></div>
+        <div class="stat verdict" id="cmp-verdict"><span>So sánh</span><b>—</b></div>
+      </div>
+
+      <div class="methods">
+        <article class="method" id="m-sift" data-state="idle">
+          <header>
+            <div>
+              <span class="tag classic">Truyền thống</span>
+              <h3>SIFT + RANSAC + màu HSV</h3>
+              <p>Đối sánh điểm đặc trưng với ảnh mẫu, kiểm chứng homography, kết hợp màu</p>
+            </div>
+          </header>
+          <div class="canvas-wrap">
+            <canvas></canvas>
+            <div class="placeholder">Kết quả sẽ hiện ở đây</div>
+            <div class="spinner" aria-label="Đang nhận diện"></div>
+          </div>
+          <dl class="metrics">
+            <div><dt>Số tờ</dt><dd data-k="count">—</dd></div>
+            <div><dt>Tổng tiền</dt><dd data-k="total">—</dd></div>
+            <div><dt>Thời gian</dt><dd data-k="ms">—</dd></div>
+          </dl>
+          <ol class="notes"></ol>
+        </article>
+
+        <article class="method" id="m-yolo" data-state="idle">
+          <header>
+            <div>
+              <span class="tag deep">Học sâu</span>
+              <h3>YOLO11n</h3>
+              <p>Mạng phát hiện vật thể một giai đoạn, định vị và phân loại cùng lúc</p>
+            </div>
+          </header>
+          <div class="canvas-wrap">
+            <canvas></canvas>
+            <div class="placeholder">Kết quả sẽ hiện ở đây</div>
+            <div class="spinner" aria-label="Đang nhận diện"></div>
+          </div>
+          <dl class="metrics">
+            <div><dt>Số tờ</dt><dd data-k="count">—</dd></div>
+            <div><dt>Tổng tiền</dt><dd data-k="total">—</dd></div>
+            <div><dt>Thời gian</dt><dd data-k="ms">—</dd></div>
+          </dl>
+          <ol class="notes"></ol>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">Đồ án Thị giác máy tính · Nhóm 06 · Ảnh chỉ được xử lý trên máy chủ cục bộ</footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

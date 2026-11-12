@@ -5,7 +5,8 @@ Mọi ngưỡng chọn trên tập valid, tập test chỉ dùng để báo cáo
   - Theo tờ tiền và theo ảnh: accuracy cao nhất với accuracy trên mẫu có kết quả >= 95% (cùng quy tắc với SIFT + màu).
 
 Chạy:  python src/yolo_evaluate.py
-Kết quả: results/yolo/evaluation_test/
+       python src/yolo_evaluate.py --trong-so <best.pt khác> --ra <thư mục khác>   # đánh giá mô hình khác, không ghi đè
+Kết quả: results/yolo/evaluation_test/ (hoặc thư mục --ra)
 """
 import argparse
 import json
@@ -150,12 +151,14 @@ def theo_kich_thuoc(preds_all, gts_all, thr=0.5):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--trong-so", default=str(ROOT / "results" / "yolo" / "yolo11n" / "weights" / "best.pt"))
+    parser.add_argument("--ra", default="evaluation_test", help="Thư mục kết quả trong results/yolo/")
     args = parser.parse_args()
-    out_dir = ROOT / "results" / "yolo" / "evaluation_test"
+    out_dir = ROOT / "results" / "yolo" / args.ra
     out_dir.mkdir(parents=True, exist_ok=True)
     torch.set_num_threads(8)
     model = YOLO(args.trong_so)
-    assert list(model.names.values()) == ["1000", "2000", "5000", "10000", "20000", "50000", "100000", "200000", "500000"]
+    lop_goc = ["1000", "2000", "5000", "10000", "20000", "50000", "100000", "200000", "500000"]
+    assert list(model.names.values()) in (lop_goc, lop_goc + ["500"])
 
     # 1. Chọn ngưỡng trên valid
     print("Chạy tập valid...", flush=True)
@@ -227,7 +230,7 @@ def main():
     # 4. mAP chuẩn COCO trên test
     torch.set_num_threads(8)
     m = model.val(data=str(ROOT / "data" / "dataset_yolo" / "currency.yaml"), split="test", imgsz=640, device="cpu",
-                  project=str(ROOT / "results" / "yolo"), name="val_test", exist_ok=True, verbose=False)
+                  project=str(ROOT / "results" / "yolo"), name="val_test" + args.ra.removeprefix("evaluation_test"), exist_ok=True, verbose=False)
     ket_qua["map_test"] = {"mAP50": float(m.box.map50), "mAP50_95": float(m.box.map),
                            "ap50_theo_lop": {model.names[int(c)]: float(a) for c, a in zip(m.box.ap_class_index, m.box.ap50)}}
     (out_dir / "results.json").write_text(json.dumps(ket_qua, ensure_ascii=False, indent=2), encoding="utf-8")

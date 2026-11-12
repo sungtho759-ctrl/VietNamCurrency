@@ -17,7 +17,7 @@ Tóm tắt các cơ chế, chi tiết ở các mục con bên dưới:
 - Khung hình được hiển thị ngay. Việc nhận diện chạy ở luồng riêng trên khung hình mới nhất (khung đến trong lúc đang
   bận thì bỏ qua), nên hình không giật dù nhận diện chậm hơn tốc độ camera.
 - **Chống chập chờn:** kết quả được bám theo giữa các lần nhận diện (ghép khung theo IoU ≥ 0,3). Tờ mới cần độ tin cậy
-  YOLO ≥ 0,45; tờ đang bám theo được giữ bởi khung ≥ 0,25. Một vết chỉ bị xóa khi bộ nhận diện không thấy nó **2 vòng
+  YOLO ≥ 0,35; tờ đang bám theo được giữ bởi khung ≥ 0,25. Một vết chỉ bị xóa khi bộ nhận diện không thấy nó **2 vòng
   liên tiếp và** đã quá 0,6 giây (`--hold`; 1,5 giây với tờ do SIFT toàn khung hình tìm ra, vì đường này chỉ chạy mỗi
   0,5 giây) – vòng nhận diện chậm không làm khung tự tắt khi tờ vẫn còn trong hình. Vết cũ nằm chồng lên vết vừa cập
   nhật (tờ xoay làm khung mới lệch khỏi khung cũ) bị bỏ để không hiện hai khung cho một tờ.
@@ -26,6 +26,11 @@ Tóm tắt các cơ chế, chi tiết ở các mục con bên dưới:
   nhận diện ngắn và vị trí các tờ được YOLO cập nhật liên tục; tờ chưa đến lượt dùng kết quả đã lưu hoặc tạm hiện "?".
   Nhãn hiển thị là kết quả SIFT + màu gần nhất (không bỏ phiếu trên kết quả đã lưu); lần kiểm tra lại "chưa rõ" chỉ giữ
   mệnh giá cũ thêm 2 giây.
+- **Khi YOLO không có khung nào ≥ 0,25** (`hybrid`, tối đa mỗi 0,5 giây): thử SIFT + màu trên tối đa 2 khung YOLO
+  yếu (0,10–0,25; `YOLO_WEAK`), chỉ nhận khi ≥ 8 cặp khớp; hai khung yếu cùng chứa một tờ (chồng ≥ 80%) thì giữ khung
+  nhiều cặp khớp hơn. Không được mới chạy SIFT trên toàn khung hình. Khung của SIFT toàn khung hình (cả chế độ `sift`)
+  là khung homography **cắt bớt phần ngoài hình chữ nhật bao các điểm khớp phóng to 1,8 lần**
+  (`classify_image(..., inlier_rect=True)`): tờ bị gập / che một phần làm khung homography ngoại suy vượt xa tờ tiền.
 - Chữ có dấu được dựng một lần thành ảnh nhỏ rồi dùng lại (vẽ: ~2 ms/khung thay vì ~11 ms), để luồng hiển thị không
   tranh tài nguyên với luồng nhận diện. `--record goc.mp4` ghi lại hình gốc từ webcam để chạy lại sau bằng `--source`
   (video từ tệp được phát đúng tốc độ, kể cả với `--no-show`, nên mô phỏng được webcam).
@@ -112,6 +117,10 @@ YOLO" (SIFT chọn khác YOLO trong khi ứng viên của mệnh giá YOLO cũng
 không đổi, trên bản ghi webcam giảm nhãn sai (4,0% → 2,3% với ρ = 0,7) nhưng giảm mạnh số kết quả đúng (74,6% →
 68,2%) vì YOLO hay sai trên webcam – chưa đưa vào.
 
+**Mặt trước tờ 100.000 bị báo 500.000** (lần thử thứ sáu): mọi tờ polymer cùng chân dung, quốc huy, quốc hiệu ở mặt
+trước, vùng cắt khớp 28–41 cặp với cả 500.000, 10.000, 50.000, 20.000, 200.000, 100.000; màu xếp 100.000 đầu nhưng
+SIFT vượt luật khoảng cách. Chưa sửa.
+
 ## Nhật ký thử bằng webcam
 
 Các lần thử webcam theo thứ tự thời gian và điều chỉnh rút ra từ mỗi lần (số liệu của các mục trên nằm ở đây).
@@ -177,6 +186,15 @@ Các lần thử webcam theo thứ tự thời gian và điều chỉnh rút ra 
   điểm khớp) luật inlier riêng giảm mạnh số "?" mà không tăng nhãn sai. Bản ghi webcam không có nhãn: "đúng" = 100.000
   hoặc 500 đồng (hai tờ duy nhất được dùng trong buổi thử), mọi nhãn khác tính là sai. Lưu ý chưa có bản ghi webcam
   độc lập để kiểm tra lại lựa chọn này.
+- Lần thử webcam thứ sáu (sau khi đổi sang YOLO 10 lớp, 5 ảnh chụp lỗi): ba lỗi do **YOLO không thấy tờ cầm tay sát
+  camera** (cả mô hình 9 lớp cũ lẫn mô hình mới chỉ cho 0–0,27), nên phải dùng SIFT toàn khung hình: khung méo vượt ra
+  ngoài tờ 100.000 bị gập, và tờ 2.000 bị báo 1.000 (khung hình thu về 640 px: 17 cặp khớp 1.000 / 15 cặp 2.000; cắt
+  đúng vùng tờ thì 45 / 27, ra 2.000). Trên bản ghi webcam lần 5, YOLO mới thấy tờ (≥ 0,35) ở 397/1.269 khung hình
+  lấy mẫu, mô hình cũ chỉ 83. Đã thêm bước thử khung YOLO yếu và cắt khung SIFT (mục **Cách hoạt động**). Đo trên bản
+  ghi lần 5 (1/30 khung hình, 86 khung chỉ có khung YOLO yếu, kiểm tra bằng mắt): khung có nhãn tăng từ 29 lên 44
+  (thêm 14 khung đúng, trong đó 8 khung tờ 500), nhưng nhãn sai mệnh giá tăng từ 2 lên 6 – vùng cắt mặt trước tờ
+  100.000 bị báo 500.000 (lỗi chung của mặt trước polymer, xem mục **Lỗi đã biết**). Tắt bước này: đặt
+  `YOLO_WEAK = YOLO_KEEP` trong `realtime.py`.
 
 ## Chạy thử trên video
 

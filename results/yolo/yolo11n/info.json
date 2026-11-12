@@ -1,6 +1,6 @@
 {
   "gpu": "Tesla T4",
   "ultralytics": "8.4.202",
-  "torch": "2.11.0+cu130",
-  "thoi_gian_huan_luyen_phut": 11.3
+  "torch": "2.14.1+cu130",
+  "thoi_gian_huan_luyen_phut": 11.5
 }
