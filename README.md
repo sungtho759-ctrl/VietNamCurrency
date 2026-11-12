@@ -150,16 +150,18 @@ python src/realtime.py --source video.mp4 --save ket_qua.mp4   # chạy trên vi
 (đúng điểm yếu đã thấy trên tập test). `src/evaluate_hybrid.py` so sánh ba cách gán nhãn trên cùng khung YOLO, chỉ số
 như mục nhận diện nhiều tờ (đúng vị trí IoU ≥ 0,5 và đúng mệnh giá); chế độ được chọn trên **valid**:
 
-| Cách gán nhãn | F1 valid | F1 test | Ảnh đúng tổng tiền (test) | F1 tờ 100.000 (valid / test) | F1 tờ 500.000 (valid / test) |
-|---|---|---|---|---|---|
-| YOLO | 90,82% | 90,63% | 75,23% | 84,8% / 82,1% | 76,2% / 77,3% |
-| **hybrid** (SIFT + màu, không kết luận thì giữ nhãn YOLO) | **93,27%** | **92,79%** | **81,19%** | 92,1% / 93,5% | 90,7% / 92,8% |
-| hybrid chặt (không kết luận thì bỏ khung) | 91,13% | 91,30% | 75,23% | 99,0% / 98,0% | 98,2% / 97,7% |
-| **hybrid, vùng cắt ≤ 400 px** (cỡ vùng cắt dùng trong `realtime.py`) | 92,99% | 92,97% | 81,65% | 91,2% / 93,5% | 89,7% / 94,8% |
+| Cách gán nhãn | F1 valid | F1 test | Ảnh đúng tổng tiền (test) | F1 tờ 100.000 (valid / test) | F1 tờ 500.000 (valid / test) | F1 tờ 500 (valid / test) |
+|---|---|---|---|---|---|---|
+| YOLO | 92,47% | 93,38% | 80,26% | 86,5% / 87,4% | 78,6% / 80,4% | 90,5% / 100% |
+| **hybrid** (SIFT + màu, không kết luận thì giữ nhãn YOLO) | **94,46%** | **94,26%** | **82,89%** | 94,4% / 95,4% | 91,6% / 93,1% | 97,4% / 100% |
+| hybrid chặt (không kết luận thì bỏ khung) | 91,30% | 91,40% | 75,44% | 98,5% / 98,1% | 98,3% / 97,8% | 100% / 100% |
+| **hybrid, vùng cắt ≤ 400 px** (cỡ vùng cắt dùng trong `realtime.py`) | 94,46% | 94,26% | 82,89% | 94,0% / 95,4% | 91,1% / 93,1% | 97,4% / 100% |
 
-(F1 theo mệnh giá tính trên các khung đúng vị trí. Chi tiết: `results/hybrid_valid/`, `results/hybrid_test/`.
-Bảng này đo với mô hình YOLO 9 lớp trước khi thêm tờ 500, chưa chạy lại với mô hình hiện tại.)
-Hybrid chặt gần như không nhận sai mệnh giá nhưng bỏ khoảng 10% khung, nên F1 chung thấp hơn.
+(YOLO 10 lớp, ngưỡng 0,35 và NMS không phân lớp như khi chọn trên valid; toàn bộ 458 ảnh valid và 228 ảnh test có tờ
+tiền, kể cả ảnh tờ 500. F1 theo mệnh giá tính trên các khung đúng vị trí. Chi tiết: `results/hybrid_valid*/`,
+`results/hybrid_test*/`. Với mô hình 9 lớp trước khi thêm tờ 500, F1 valid / test là 90,82% / 90,63% cho YOLO và
+93,27% / 92,79% cho hybrid.)
+Hybrid chặt gần như không nhận sai mệnh giá nhưng bỏ khoảng 7–8% số tờ, nên F1 chung thấp hơn.
 
 Các cơ chế chính (chi tiết, số liệu và nhật ký các lần thử webcam: [docs/realtime.md](docs/realtime.md)):
 
@@ -185,7 +187,8 @@ chạy không cần màn hình và ghi kết quả từng khung ra CSV; `--yolo-
 
 **Lưu ý:** cấu hình của `realtime.py` (cổng bằng chứng, inlier riêng, CLAHE dự phòng, vùng cắt ≤ 400 px) khác cấu hình
 mặc định dùng trong các bảng đánh giá bên dưới. Cổng bằng chứng làm F1 trên bộ dữ liệu giảm (hybrid chặt, có CLAHE dự
-phòng: 87,56% valid / 86,43% test) đổi lấy việc không báo sai mệnh giá cho vật không phải tiền.
+phòng: 88,36% valid / 86,92% test; tính bằng `python src/evaluate_hybrid.py --crop-max 400 --clahe-du-phong 2` sau
+khi đã chạy `--crop-max 400` và `--crop-max 400 --clahe 2`) đổi lấy việc không báo sai mệnh giá cho vật không phải tiền.
 
 ## Cấu hình mặc định (SIFT + màu)
 
@@ -337,7 +340,8 @@ python src/compare_boxes.py        # recall theo kích thước tờ, hình đ�
 Trên vùng cắt theo khung bao, YOLO chỉ đạt 61,11% khi luôn trả lời. YOLO kém ở tờ 100.000 và 500.000 đồng (F1 80,34% và
 72,09% trên ảnh đầy đủ), SIFT + màu vẫn trên 90%. Với quy tắc ngưỡng theo ảnh, ngưỡng chọn trên valid cho YOLO trả lời
 94,25% số ảnh nhưng chỉ đúng 92,68% số ảnh có trả lời (dưới mức 95% đạt được trên valid). Chi tiết:
-`results/yolo/evaluation_test/`. Hình `results/figures/sift_vs_yolo.jpg` vẽ với mô hình 9 lớp cũ.
+`results/yolo/evaluation_test/`. Hình `results/figures/sift_vs_yolo.jpg` (`compare_boxes.py`) vẽ với mô hình 10 lớp
+trên toàn bộ 228 ảnh test có tờ tiền (kể cả 10 ảnh tờ 500): F1 tự tìm mọi tờ 74,71% (SIFT + màu) so với 93,38% (YOLO).
 
 **Tờ 500 đồng** (10 ảnh test, một lượt chụp trên nền không có trong train): YOLO nhận đúng cả 10 tờ (AP50 0,995; một
 ảnh thừa một khung trùng). Mô hình 9 lớp trước đó nhận 7 tờ thành 200.000, 2 tờ thành 50.000 và bỏ sót 2 tờ. Chỉ có

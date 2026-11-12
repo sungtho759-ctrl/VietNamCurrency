@@ -1,8 +1,8 @@
-Tập valid: 439 ảnh, 1074 tờ, 1051 khung YOLO (ngưỡng 0.45, NMS không phân lớp). SIFT + màu trung bình 1905 ms / khung (đo khi chạy song song nhiều tiến trình, nên chậm hơn so với khi chạy một tiến trình).
-SIFT + màu không kết luận: 119/1051 khung
+Tập valid: 458 ảnh, 1108 tờ, 1096 khung YOLO (ngưỡng 0.35, NMS không phân lớp). SIFT + màu trung bình 305 ms / khung (lần chạy này: một tiến trình, OpenCV dùng nhiều luồng).
+SIFT + màu không kết luận: 123/1096 khung
 
-Cách gán nhãn     Recall  Precision       F1  Đúng tổng tiền      1000    2000    5000   10000   20000   50000  100000  200000  500000
-yolo              89.85%     91.82%   90.82%          76.99%     94.5%   97.0%   98.8%   94.8%   95.4%   98.6%   84.8%   96.1%   76.2%
-hybrid            92.27%     94.29%   93.27%          81.78%     93.7%   99.1%   98.4%   91.9%   97.4%  100.0%   92.1%   98.4%   90.7%
-hybrid_strict     85.10%     98.07%   91.13%          74.72%     94.9%   99.0%   98.7%   94.7%   98.3%  100.0%   99.0%   99.6%   98.2%
+Cách gán nhãn     Recall  Precision       F1  Đúng tổng tiền       500    1000    2000    5000   10000   20000   50000  100000  200000  500000
+yolo              91.97%     92.97%   92.47%          80.13%     90.5%   96.7%   98.3%   97.6%   96.5%   96.3%   99.2%   86.5%   94.6%   78.6%
+hybrid            93.95%     94.98%   94.46%          84.50%     97.4%   95.0%   98.7%   99.2%   92.7%   98.7%   99.6%   94.4%   94.2%   91.6%
+hybrid_strict     85.74%     97.64%   91.30%          75.76%    100.0%   94.9%   98.6%   99.1%   94.4%   98.7%  100.0%   98.5%   98.3%   98.3%
 (các cột mệnh giá: F1 nhận diện mệnh giá trên khung đúng vị trí)

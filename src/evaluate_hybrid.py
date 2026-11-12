@@ -1,6 +1,7 @@
 """Đánh giá chế độ kết hợp (hybrid) của realtime.py: YOLO định vị từng tờ, SIFT + màu nhận diện mệnh giá.
 
-So sánh trên cùng khung YOLO (ngưỡng 0,45, NMS không phân lớp – như realtime.py) ba cách gán nhãn:
+So sánh trên cùng khung YOLO (ngưỡng chọn trên valid bởi yolo_evaluate.py – 0,35, NMS không phân lớp – như
+realtime.py) ba cách gán nhãn:
   - yolo          : nhãn của YOLO.
   - hybrid        : nhãn SIFT + màu; nếu SIFT + màu không kết luận thì giữ nhãn YOLO (realtime.py).
   - hybrid_strict : nhãn SIFT + màu; nếu không kết luận thì bỏ khung đó (không hiển thị).
@@ -8,6 +9,8 @@ Chỉ số giống evaluate_multi_note.py (khung đúng khi IoU >= 0,5 và đún
 khung đúng vị trí.
 
 Chạy:  python src/evaluate_hybrid.py --split valid test --workers 10
+       python src/evaluate_hybrid.py --crop-max 400 --clahe-du-phong 2   # CLAHE chỉ khi ra "?" (như realtime.py);
+                                                     # cần chạy trước --crop-max 400 và --crop-max 400 --clahe 2
 Kết quả: results/hybrid_<split>/report.txt và predictions.csv
 """
 import argparse
@@ -29,7 +32,16 @@ from color_model import ColorModel, hsv_hist
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-YOLO_CONF, YOLO_AGNOSTIC = 0.45, True
+YOLO_CONF, YOLO_AGNOSTIC = 0.35, True  # mặc định; ghi đè bằng ngưỡng yolo_evaluate.py chọn trên valid nếu có
+try:
+    _chon = json.loads((ROOT / "results" / "yolo" / "evaluation_test" / "results.json")
+                       .read_text(encoding="utf-8"))["chon_tren_valid"]["nhieu_to"]
+    YOLO_CONF, YOLO_AGNOSTIC = _chon["conf"], _chon["agnostic"]
+except (OSError, KeyError, ValueError):
+    pass
+CLASSES = ["500", "1000", "2000", "5000", "10000", "20000", "50000", "100000", "200000", "500000"]
+# Luật dùng trong realtime.py: inlier riêng >= 1,3x + cổng khung <= 45°, >= 8 inlier / >= 4 khi YOLO đồng ý
+REALTIME_RULE = (True, MIN_MARGIN, ("hinh", 45.0, 8, 4))
 # --so-sanh-luat: (tên, exclusive, min_margin, cổng) thử trên cùng ứng viên SIFT. Cổng cho realtime.py – camera có thể
 # thấy vật không phải tiền, nên chỉ báo mệnh giá khi đủ bằng chứng; không đạt -> "không kết luận":
 #   None                  : không kiểm tra
@@ -146,6 +158,39 @@ def compare_rules(split, raw, items, classes, out):
     (out / "report_margin.txt").write_text(text, encoding="utf-8")
 
 
+def clahe_du_phong(split, crop_max, clip):
+    """Hybrid chặt với luật của realtime.py khi CLAHE chỉ dùng lúc lần trích thường ra "không kết luận": ghép ứng viên
+    đã lưu của hai lần chạy (không CLAHE / CLAHE luôn bật) -> report_clahe_du_phong.txt."""
+    ten = f"hybrid_{split}" + (f"_crop{crop_max}" if crop_max else "")
+    base, cl = ROOT / "results" / ten, ROOT / "results" / f"{ten}_clahe{clip:g}"
+    items, raw = pickle.loads((base / "cache.pkl").read_bytes())
+    _, raw2 = pickle.loads((cl / "cache.pkl").read_bytes())
+    assert len(raw) == len(raw2), "hai lần chạy phải dùng cùng khung YOLO"
+    yolo = [b[0] for it in items for b in it["boxes"]]
+    excl, margin, gate = REALTIME_RULE
+
+    def nhan(rw):
+        return [gated(c, *fuse(c, r, min_margin=margin, exclusive=excl), y, gate) for (c, r, _), y in zip(rw, yolo)]
+
+    tat, luon = nhan(raw), nhan(raw2)
+    cach = {"CLAHE tắt": tat, f"CLAHE luôn bật, clip {clip:g}": luon,
+            f"CLAHE chỉ khi ra \"?\", clip {clip:g}": [a if a != UNKNOWN else b for a, b in zip(tat, luon)]}
+    lines = [f"Tập {split}: hybrid chặt với luật của realtime.py (inlier riêng >= 1,3x, khung <= 45°, >= 8 inlier hoặc "
+             f">= 4 khi YOLO đồng ý) trên {len(raw)} khung YOLO", "",
+             f"{'Cách dùng CLAHE':<32} {'Không KL':>8} {'P':>8} {'R':>8} {'F1':>8}"]
+    for name, labs in cach.items():
+        k = 0
+        for it in items:
+            it["r_clahe"] = [x if x != UNKNOWN else None for x in labs[k:k + len(it["boxes"])]]
+            k += len(it["boxes"])
+        m = metrics(items, "r_clahe", CLASSES)
+        lines.append(f"{name:<32} {sum(x == UNKNOWN for x in labs):>8} {m['precision']:>8.2%} {m['recall']:>8.2%} "
+                     f"{m['f1']:>8.2%}")
+    text = "\n".join(lines)
+    print(text + "\n", flush=True)
+    (cl / "report_clahe_du_phong.txt").write_text(text, encoding="utf-8")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--split", nargs="+", default=["valid", "test"])
@@ -157,9 +202,16 @@ def main():
                         help="So sánh các luật khoảng cách (MARGIN_RULES) trên cùng ứng viên SIFT -> report_margin.txt")
     parser.add_argument("--dung-cache", action="store_true",
                         help="Dùng ứng viên SIFT đã lưu ở lần chạy trước (cache.pkl) thay vì chạy lại YOLO + SIFT")
+    parser.add_argument("--clahe-du-phong", type=float, default=0.0, metavar="CLIP",
+                        help="Chỉ tính F1 khi CLAHE (clip này) dùng lúc lần trích thường ra \"?\", từ cache của hai lần "
+                             "chạy có sẵn (cùng --crop-max)")
     parser.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 2))
     args = parser.parse_args()
-    classes = ["1000", "2000", "5000", "10000", "20000", "50000", "100000", "200000", "500000"]
+    classes = CLASSES
+    if args.clahe_du_phong:
+        for split in args.split:
+            clahe_du_phong(split, args.crop_max, args.clahe_du_phong)
+        return
 
     for split in args.split:
         out = ROOT / "results" / (f"hybrid_{split}" + (f"_crop{args.crop_max}" if args.crop_max else "")

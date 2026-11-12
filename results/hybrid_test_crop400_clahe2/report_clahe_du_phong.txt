@@ -1,0 +1,6 @@
+Tập test: hybrid chặt với luật của realtime.py (inlier riêng >= 1,3x, khung <= 45°, >= 8 inlier hoặc >= 4 khi YOLO đồng ý) trên 565 khung YOLO
+
+Cách dùng CLAHE                  Không KL        P        R       F1
+CLAHE tắt                             146   98.81%   72.89%   83.89%
+CLAHE luôn bật, clip 2                144   98.81%   73.24%   84.13%
+CLAHE chỉ khi ra "?", clip 2          116   98.44%   77.82%   86.92%

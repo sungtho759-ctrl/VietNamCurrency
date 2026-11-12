@@ -1,0 +1,6 @@
+Tập valid: hybrid chặt với luật của realtime.py (inlier riêng >= 1,3x, khung <= 45°, >= 8 inlier hoặc >= 4 khi YOLO đồng ý) trên 1096 khung YOLO
+
+Cách dùng CLAHE                  Không KL        P        R       F1
+CLAHE tắt                             301   99.37%   71.30%   83.03%
+CLAHE luôn bật, clip 2                266   98.92%   74.10%   84.73%
+CLAHE chỉ khi ra "?", clip 2          203   98.99%   79.78%   88.36%

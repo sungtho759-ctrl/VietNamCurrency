@@ -73,11 +73,14 @@ Hai lần sửa dẫn tới luật này:
 
   | Cổng | F1 hybrid chặt valid / test | Precision valid | Webcam lần 5: đúng / sai / "?" | 200 vùng cắt thẻ: bị báo ra tiền |
   |---|---|---|---|---|
-  | không có | 90,96% / 91,01% | 97,45% | 69,9% / 9,2% / 20,8% | 39 |
-  | ≥ 8 inlier | 80,42% / 82,46% | 98,65% | 68,8% / 6,4% / 24,9% | – |
-  | ≥ 8 inlier hoặc trùng nhãn YOLO | 91,02% / 91,17% | 98,69% | 69,9% / 7,5% / 22,5% | 12 |
-  | như trên, nhưng khung ≤ 45°; màu chỉ được nhận khi YOLO đồng ý | 89,15% / 89,84% | 98,98% | 68,8% / 6,9% / 24,3% | 8 (đều 20.000) |
-  | **khung ≤ 45°, ≥ 8 inlier hoặc YOLO đồng ý + ≥ 4 inlier** (dùng trong `realtime.py`) | 82,26% / 84,16% | **98,95%** | 67,6% / **5,8%** / 26,6% | **0** |
+  | không có | 91,70% / 91,53% | 97,85% | 69,9% / 9,2% / 20,8% | 39 |
+  | ≥ 8 inlier | 81,55% / 82,69% | 99,22% | 68,8% / 6,4% / 24,9% | – |
+  | ≥ 8 inlier hoặc trùng nhãn YOLO | 91,90% / 92,13% | 99,37% | 69,9% / 7,5% / 22,5% | 12 |
+  | như trên, nhưng khung ≤ 45°; màu chỉ được nhận khi YOLO đồng ý | 89,15% / 89,84%* | 98,98%* | 68,8% / 6,9% / 24,3% | 8 (đều 20.000) |
+  | **khung ≤ 45°, ≥ 8 inlier hoặc YOLO đồng ý + ≥ 4 inlier** (dùng trong `realtime.py`) | 83,03% / 83,89% | **99,37%** | 67,6% / **5,8%** / 26,6% | **0** |
+
+  Hai cột F1 và precision đo lại với YOLO 10 lớp (`results/hybrid_*_crop400/report_margin.txt`); dòng có dấu * không
+  còn trong `MARGIN_RULES`, giữ số đo với YOLO 9 lớp lúc đó. Các cột webcam và vùng cắt thẻ đo lúc thử (YOLO 9 lớp).
 
   Đánh đổi: trên bộ dữ liệu (tờ nhỏ chụp xa, ít điểm khớp, trước đây dựa vào màu) mất ~9 điểm F1 – các tờ này hiện
   "?" thay vì có nhãn; trên webcam (tờ ở gần) số kết quả đúng gần như giữ nguyên. Với chương trình thời gian thực,
@@ -100,10 +103,14 @@ lần trích thường ra "?"** (`CLAHE_FALLBACK`). Cùng cổng bằng chứng,
 
 | CLAHE | F1 hybrid chặt valid / test | Webcam lần 5: đúng / sai / "?" | 200 vùng cắt thẻ lọt |
 |---|---|---|---|
-| tắt | 82,26% / 84,16% | 67,6% / 5,8% / 26,6% | 0 |
-| luôn bật, clip 2 | 84,43% / 82,25% | 74,6% / 4,0% / 21,4% | 0 |
-| luôn bật, clip 4 | 79,89% / 78,75% | 69,4% / 4,0% / 26,6% | 0 |
-| **chỉ khi ra "?", clip 2** (dùng trong `realtime.py`) | **87,56% / 86,43%** | **78,6%** / 6,9% / **14,5%** | **0** |
+| tắt | 83,03% / 83,89% | 67,6% / 5,8% / 26,6% | 0 |
+| luôn bật, clip 2 | 84,73% / 84,13% | 74,6% / 4,0% / 21,4% | 0 |
+| luôn bật, clip 4 | 78,66% / 79,16% | 69,4% / 4,0% / 26,6% | 0 |
+| **chỉ khi ra "?", clip 2** (dùng trong `realtime.py`) | **88,36% / 86,92%** | **78,6%** / 6,9% / **14,5%** | **0** |
+
+Cột F1 đo lại với YOLO 10 lớp; dòng cuối tính bằng `python src/evaluate_hybrid.py --crop-max 400 --clahe-du-phong 2`
+(ghép kết quả của lần chạy `--crop-max 400` và `--crop-max 400 --clahe 2`, ghi ra
+`results/hybrid_*_crop400_clahe2/report_clahe_du_phong.txt`). Các cột webcam và vùng cắt thẻ đo lúc thử (YOLO 9 lớp).
 
 Ảnh webcam: mặt sau tờ 20.000 nhận được ở 2/6 ảnh (trước 0/6; các ảnh còn lại tờ bị cong hoặc nghiêng mạnh);
 38 ảnh của các lần thử trước: đúng 21 / sai 3 / "?" 14 (trước 19 / 3 / 16); video thử B (trung bình 3 lần): đúng đủ
@@ -141,7 +148,7 @@ Các lần thử webcam theo thứ tự thời gian và điều chỉnh rút ra 
   chắc 0,98 rằng tờ 100.000 là 500.000), rồi nhãn sai được giữ 2 giây. Vì vậy `realtime.py` **không dùng nhãn YOLO**:
   khi SIFT + màu chưa kết luận, tờ được vẽ khung xám "?" (không cộng vào tổng tiền), phiếu "?" không đè nhãn đã có, và
   tờ được nhận diện lại sau 0,5 giây thay vì 2 giây. Trên tập valid cách này tương ứng "hybrid chặt" (F1 91,13% so với
-  93,27% khi một khung hình chỉ được nhận diện một lần), nhưng trên video mỗi tờ được thử lại nhiều lần. Tùy chọn
+  93,27% khi một khung hình chỉ được nhận diện một lần, đo với YOLO 9 lớp lúc đó; YOLO 10 lớp: 91,30% so với 94,46%), nhưng trên video mỗi tờ được thử lại nhiều lần. Tùy chọn
   `--yolo-label` trả về cách cũ.
 - Lần thử webcam thứ tư (một rồi hai tờ 100.000 đồng, sau đó một tờ 500 đồng giấy; ~5,5 phút): trong các khung hình
   có nhãn mệnh giá, ~94% đúng (lần 2: ~55%, lần 3: ~65%), còn lại nhầm thành 50.000 / 10.000 / 500.000; "?" xuất hiện
@@ -177,10 +184,12 @@ Các lần thử webcam theo thứ tự thời gian và điều chỉnh rút ra 
 
   | Luật | F1 hybrid chặt valid / test | Bản ghi webcam lần 5 (173 khung YOLO): đúng / sai / "?" | 38 ảnh chụp webcam: đúng / sai |
   |---|---|---|---|
-  | tổng inlier ≥ 1,3× (mặc định dự án) | 91,20% / 91,48% | 59,5% / 9,8% / 30,6% | 16 / 2 |
-  | **inlier riêng ≥ 1,3×** (dùng trong `realtime.py`) | 90,96% / 91,01% | **69,9% / 9,2% / 20,8%** | **19 / 3** |
-  | inlier riêng ≥ 1,5× | 91,09% / 91,37% | 64,7% / 9,2% / 26,0% | |
-  | inlier riêng ≥ 2× | 91,13% / 91,17% | 56,6% / 9,8% / 33,5% | |
+  | tổng inlier ≥ 1,3× (mặc định dự án) | 91,65% / 91,70% | 59,5% / 9,8% / 30,6% | 16 / 2 |
+  | **inlier riêng ≥ 1,3×** (dùng trong `realtime.py`) | 91,70% / 91,53% | **69,9% / 9,2% / 20,8%** | **19 / 3** |
+  | inlier riêng ≥ 1,5× | 91,74% / 91,51% | 64,7% / 9,2% / 26,0% | |
+  | inlier riêng ≥ 2× | 91,22% / 91,38% | 56,6% / 9,8% / 33,5% | |
+
+  Cột F1 đo lại với YOLO 10 lớp; các cột webcam đo lúc thử (YOLO 9 lớp).
 
   Trên bộ dữ liệu (tờ nhỏ, chụp xa) hai luật gần như ngang nhau; trên webcam (tờ ở gần, chi tiết chung chiếm nhiều
   điểm khớp) luật inlier riêng giảm mạnh số "?" mà không tăng nhãn sai. Bản ghi webcam không có nhãn: "đúng" = 100.000

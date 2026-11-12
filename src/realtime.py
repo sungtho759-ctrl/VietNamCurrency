@@ -6,7 +6,7 @@ Ba chế độ (đổi bằng phím 1 / 2 / 3 khi đang chạy):
   3. hybrid – YOLO định vị từng tờ, SIFT + màu nhận diện mệnh giá của vùng cắt; nếu SIFT + màu không kết luận thì
               hiện "?" và thử lại sau 0,5 giây (--yolo-label: dùng nhãn YOLO như khi đánh giá). Mỗi tờ chỉ nhận
               diện lại khi mới xuất hiện hoặc sau --recheck giây. Mặc định nếu có ultralytics: trên tập valid F1
-              93,3% so với 90,8% của yolo, sửa phần lớn lỗi nhầm tờ 100.000 và 500.000 đồng của YOLO
+              94,5% so với 92,5% của yolo, sửa phần lớn lỗi nhầm tờ 100.000 và 500.000 đồng của YOLO
               (evaluate_hybrid.py). YOLO thử thêm khung hình xoay 180° và SIFT toàn khung hình khi không thấy tờ.
 
 Khung hình được hiển thị ngay, việc nhận diện chạy ở luồng riêng trên khung hình mới nhất, nên hình không bị giật
@@ -52,11 +52,11 @@ YOLO_WEAK, WEAK_MAX = 0.10, 2
 SIFT_MAX_SIDE = 640          # thu nhỏ khung hình trước khi trích SIFT để nhanh hơn
 HYBRID_CROP_MAX = 400        # hybrid: thu vùng cắt về cạnh dài tối đa N px trước SIFT + màu (0 = giữ nguyên).
 # Vùng cắt webcam lớn (~600 px) khớp nhiều chi tiết chung giữa các mệnh giá (chân dung, quốc huy) làm luật khoảng
-# cách từ chối kết luận; 400 px giống cỡ vùng cắt khi dò tham số. Valid: F1 92,99% so với 93,27% (gần như không đổi),
+# cách từ chối kết luận; 400 px giống cỡ vùng cắt khi dò tham số. Valid: F1 94,46% như vùng cắt gốc (YOLO 10 lớp),
 # nhanh hơn ~35%; ảnh webcam tờ 100.000: đúng 7/7 thay vì 4/7 (evaluate_hybrid.py --crop-max 400).
 # Luật khoảng cách theo inlier *riêng* (evaluate_sift.decide, exclusive=True): bỏ các điểm SIFT mà mẫu thắng và mẫu
-# đối thủ cùng khớp vào (chân dung, quốc huy, quốc hiệu chung của mặt trước). Valid: F1 hybrid chặt 90,96% so với
-# 91,20% (gần như không đổi); bản ghi webcam (173 khung YOLO): đúng 69,9% so với 59,5%, "?" 20,8% so với 30,6%,
+# đối thủ cùng khớp vào (chân dung, quốc huy, quốc hiệu chung của mặt trước). Valid: F1 hybrid chặt 91,70% so với
+# 91,65% (gần như không đổi, YOLO 10 lớp); bản ghi webcam (173 khung YOLO): đúng 69,9% so với 59,5%, "?" 20,8% so với 30,6%,
 # sai 9,2% so với 9,8% (evaluate_hybrid.py --so-sanh-luat).
 MARGIN_EXCLUSIVE = True
 # Cổng bằng chứng (evaluate_sift.evidence_ok): camera có thể thấy vật không phải tiền – thẻ bảo hiểm y tế bị báo
@@ -65,7 +65,7 @@ MARGIN_EXCLUSIVE = True
 # homography gần chữ nhật (lệch <= EVIDENCE_ANGLE độ; khớp đúng: trung vị ~10°, khớp ngẫu nhiên trên thẻ: 64–85°) và
 # >= EVIDENCE_MIN inlier, hoặc >= EVIDENCE_YOLO inlier khi YOLO cũng nói mệnh giá đó; kết quả chỉ theo màu không được
 # nhận. 200 vùng cắt thẻ (5 ảnh x 40 biến thể): lọt 0 (không cổng: 39, cổng cũ ">= 8 inlier hoặc trùng YOLO": 12);
-# bản ghi webcam: đúng 67,6% / sai 5,8% (cổng cũ 69,9% / 7,5%); valid F1 hybrid chặt 82,26% (cổng cũ 91,02%) vì tờ
+# bản ghi webcam: đúng 67,6% / sai 5,8% (cổng cũ 69,9% / 7,5%); valid F1 hybrid chặt 83,03% (cổng cũ 91,90%) vì tờ
 # nhỏ chụp xa ít điểm khớp, trước đây dựa vào màu – nay hiện "?".
 EVIDENCE_ANGLE, EVIDENCE_MIN, EVIDENCE_YOLO = 45.0, MIN_INLIERS, 4
 # hybrid: vết mất dấu lâu hơn N giây rồi được tìm lại -> nhận diện lại ngay (có thể đã là tờ khác ở cùng chỗ)
@@ -73,8 +73,8 @@ REACQUIRE_GAP = 0.5
 # CLAHE dự phòng: vùng cắt ra "?" thì trích SIFT lại sau khi tăng tương phản cục bộ (CLAHE, clipLimit này; so với bộ
 # ảnh mẫu cũng đã tăng tương phản). Mặt sau tờ 20.000 dưới đèn phòng bị bạc màu, SIFT thường chỉ khớp 0–4 điểm. Luôn
 # bật CLAHE làm SIFT chậm gần gấp đôi (nhiều điểm đặc trưng hơn) nên chỉ dùng khi cần. Chọn trên valid (cùng cổng bằng
-# chứng ở trên): F1 hybrid chặt valid / test – tắt 82,26% / 84,16%, luôn bật (clip 2) 84,43% / 82,25%, khi "?"
-# 87,56% / 86,43%; bản ghi webcam đúng / sai / "?" – tắt 67,6% / 5,8% / 26,6%, khi "?" 78,6% / 6,9% / 14,5%; 200 vùng
+# chứng ở trên, YOLO 10 lớp): F1 hybrid chặt valid / test – tắt 83,03% / 83,89%, luôn bật (clip 2) 84,73% / 84,13%,
+# khi "?" 88,36% / 86,92% (evaluate_hybrid.py --clahe-du-phong 2); bản ghi webcam đúng / sai / "?" – tắt 67,6% / 5,8% / 26,6%, khi "?" 78,6% / 6,9% / 14,5%; 200 vùng
 # cắt thẻ: lọt 0 ở mọi cách. 0 = tắt.
 CLAHE_FALLBACK = 2.0
 SIFT_FALLBACK_EVERY = 0.5    # hybrid: YOLO không thấy tờ nào -> thử SIFT toàn khung hình, tối đa mỗi N giây
