@@ -12,7 +12,7 @@ Bộ dữ liệu Roboflow gốc không có tờ 500 đồng; nhóm tự chụp t
 **Ghi chú về dữ liệu**).
 
 Hai phương pháp được so sánh cạnh nhau trên giao diện web **VND Vision AI**, và kết hợp với nhau (YOLO định vị, SIFT +
-màu nhận diện) trong chế độ nhận diện thời gian thực từ webcam.
+màu nhận diện) trong chế độ nhận diện thời gian thực từ webcam và trong mục **Kết hợp YOLO + SIFT** của giao diện web.
 
 ## Cấu trúc thư mục
 
@@ -21,14 +21,17 @@ VietNamCurrency/
 ├── README.md
 ├── requirements.txt, requirements_yolo.txt
 ├── web/                           # Trang web của web_app.py (index.html, style.css, app.js, logo.svg)
+├── api/                           # Hàm Python trên Vercel: index.py (dùng lại web_app.py), requirements.txt
+├── vercel.json, .vercelignore     # Cấu hình triển khai Vercel (docs/vercel.md)
 ├── docs/
-│   └── realtime.md                # Chi tiết thiết kế + nhật ký thử nghiệm nhận diện thời gian thực
+│   ├── realtime.md                # Chi tiết thiết kế + nhật ký thử nghiệm nhận diện thời gian thực
+│   └── vercel.md                  # Triển khai giao diện web lên Vercel
 ├── src/
 │   ├── evaluate_sift.py           # Logic nhận diện (SIFT, RANSAC, kết hợp màu, nhiều tờ) + đánh giá trên tập có nhãn
 │   ├── color_model.py             # Đặc trưng màu HSV và bộ phân loại màu
 │   ├── recognize.py               # Nhận diện mệnh giá trong một ảnh (dòng lệnh)
 │   ├── gui.py                     # Giao diện đồ họa (Tkinter)
-│   ├── web_app.py                 # Giao diện web VND Vision AI (Flask): so sánh SIFT + màu và YOLO11n
+│   ├── web_app.py                 # Giao diện web VND Vision AI (Flask): so sánh SIFT + màu và YOLO11n, mục kết hợp
 │   ├── realtime.py                # Nhận diện thời gian thực từ webcam / video (SIFT, YOLO, kết hợp)
 │   ├── build_templates.py         # Loại ảnh train gần trùng, tạo ảnh mẫu bổ sung + mô hình màu
 │   ├── tune_thresholds.py         # Dò tham số trên tập valid
@@ -43,6 +46,7 @@ VietNamCurrency/
 │   ├── yolo_prepare.py            # Đổi nhãn COCO sang YOLO, loại ảnh train gần trùng
 │   ├── yolo_train.py              # Huấn luyện YOLO11n
 │   ├── yolo_evaluate.py           # Đánh giá YOLO với cùng chỉ số như SIFT + màu
+│   ├── yolo_onnx.py               # Chạy YOLO11n từ best.onnx bằng cv2.dnn (không cần PyTorch, dùng trên Vercel)
 │   └── compare_boxes.py           # So sánh theo kích thước tờ, hình đối chiếu
 ├── colab_yolo/                    # Notebook huấn luyện YOLO trên Google Colab (dữ liệu: yolo_prepare.py --zip)
 ├── data/
@@ -126,10 +130,30 @@ so sánh cho biết hai kết quả có trùng khớp không và phương pháp 
   "Nhận diện liên tục" cho mỗi phương pháp lấy khung hình mới nhất ngay khi xong lần trước (YOLO cập nhật nhiều lần trong
   lúc SIFT xử lý một khung). "Chỉ xét vùng trong khung" cắt ảnh theo khung căn chỉnh trước khi gửi.
 - **Tải ảnh lên:** kéo thả, chọn tệp hoặc dán (Ctrl+V); có sẵn các ảnh mẫu trong `data/test_images/`.
+- **Mục "Kết hợp YOLO + SIFT"** (tab thứ hai ở khung kết quả, tách khỏi phần so sánh; dùng chung ảnh / camera ở khung
+  đầu vào, đổi mục thì ảnh đang có được nhận diện lại): YOLO11n định vị từng tờ, SIFT + màu nhận diện mệnh giá trên vùng
+  cắt (`POST /api/hybrid`, cùng hàm `Recognizers.classify_crop` và cấu hình chế độ `hybrid` của `realtime.py`: vùng cắt
+  ≤ 400 px, luật inlier riêng, cổng bằng chứng, CLAHE dự phòng). Mỗi tờ ghi rõ nguồn của mệnh giá: **SIFT + màu** (khung
+  nét liền, kèm số cặp điểm khớp và nhãn YOLO để đối chiếu; tờ YOLO nhận khác được tô vàng), **theo YOLO** khi SIFT +
+  màu chưa kết luận (khung nét đứt; tắt công tắc "Dùng nhãn YOLO…" thì hiện "?" và không tính vào tổng tiền, như
+  `realtime.py`). YOLO không thấy tờ nào thì thử ảnh xoay 180°, rồi SIFT + màu trên toàn ảnh. Thời gian được tách thành
+  phần YOLO và phần SIFT + màu.
 - Máy chủ chỉ nghe trên `127.0.0.1`; camera cần trang mở qua `http://localhost` (hoặc https). Ảnh lớn được thu về cạnh
   dài 800 px trước SIFT; ảnh ≤ 640 px được phóng to ×1,5 như khi đánh giá nhiều tờ.
 - Tùy chọn: `--port 8000` đổi cổng. Dừng máy chủ bằng `Ctrl+C` trong terminal; nếu chạy bằng nút Run (Code Runner) của
   VS Code thì kết quả nằm ở bảng Output, nơi `Ctrl+C` không có tác dụng, dùng `Ctrl+Alt+M` (Stop Code Run).
+
+### Triển khai trên Vercel
+
+Giao diện web có thể đưa lên [Vercel](https://vercel.com) để mở từ điện thoại hay máy khác qua HTTPS: import kho GitHub
+tại <https://vercel.com/new> (Framework Preset: `Other`) rồi bấm **Deploy**, hoặc dùng `vercel --prod` của Vercel CLI.
+Cấu hình có sẵn trong `vercel.json`, `.vercelignore` và `api/`.
+
+Vì gói hàm Python của Vercel giới hạn 250 MB, bản trên Vercel không dùng PyTorch: YOLO11n chạy từ
+`results/yolo/yolo11n/weights/best.onnx` bằng `cv2.dnn` (`src/yolo_onnx.py`), cho kết quả trùng `best.pt` trên cả 234
+ảnh thử (cùng khung, cùng mệnh giá), chậm hơn (~0,2–0,3 s/ảnh). Phương pháp truyền thống và mục kết hợp giữ nguyên. Ảnh được thu về cạnh
+dài 1.600 px trong trình duyệt trước khi gửi (Vercel giới hạn thân yêu cầu 4,5 MB). Chi tiết, các bước kiểm tra và giới
+hạn (khởi động lạnh, quét camera liên tục): [docs/vercel.md](docs/vercel.md).
 
 ## Nhận diện thời gian thực
 

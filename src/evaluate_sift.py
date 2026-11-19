@@ -14,10 +14,6 @@ from collections import defaultdict
 from pathlib import Path
 
 import cv2
-import matplotlib
-matplotlib.use("Agg")  # chỉ lưu hình ra file, tránh lỗi backend Tk khi chạy lâu
-import matplotlib.pyplot as plt
-from matplotlib.path import Path as MplPath
 import numpy as np
 import sys
 
@@ -415,9 +411,23 @@ def detect_all(img, templates, color_model=None, ransac=RANSAC_THRESH, min_inlie
                     break
 
         # Loại các điểm thuộc tờ vừa xét (inlier và mọi điểm trong khung) rồi tìm tờ tiếp theo
-        active &= ~MplPath(np.float32(top[5])).contains_points(pts)
+        active &= ~points_in_polygon(top[5], pts)
         active[top[6]] = False
     return found
+
+
+def points_in_polygon(poly, pts):
+    """Điểm nào nằm trong đa giác (quy tắc chẵn-lẻ, như matplotlib.path.Path.contains_points).
+
+    Viết bằng numpy để giao diện web không cần matplotlib khi triển khai trên Vercel."""
+    poly = np.asarray(poly, np.float64).reshape(-1, 2)
+    x, y = pts[:, 0][:, None], pts[:, 1][:, None]
+    x1, y1 = poly[:, 0][None], poly[:, 1][None]
+    x2, y2 = np.roll(poly[:, 0], -1)[None], np.roll(poly[:, 1], -1)[None]
+    crosses = (y1 > y) != (y2 > y)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        x_cross = x1 + (y - y1) * (x2 - x1) / (y2 - y1)
+    return ((crosses & (x < x_cross)).sum(1) % 2).astype(bool)
 
 
 def crop_box(img, bbox, pad=0.05, min_side=400):
@@ -488,6 +498,10 @@ def report(name, rows, classes, out_dir, phuong_phap="SIFT"):
         writer = csv.DictWriter(f, fieldnames=rows[0].keys())
         writer.writeheader()
         writer.writerows(rows)
+
+    import matplotlib
+    matplotlib.use("Agg")  # chỉ lưu hình ra file, tránh lỗi backend Tk khi chạy lâu
+    import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(10, 8))
     ax.imshow(cm, cmap="Blues")

@@ -30,7 +30,6 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
 
 from color_model import MODEL_PATH, ColorModel, hsv_hist
 import evaluate_sift
@@ -424,6 +423,8 @@ class Tracker:
 
 # ------------------------------------------------------------------------------------------------ vẽ
 def load_font(size):
+    from PIL import ImageFont  # nạp khi vẽ: web_app.py dùng lại Recognizers mà không cần Pillow (Vercel)
+
     for name in ("segoeuib.ttf", "arialbd.ttf", "DejaVuSans-Bold.ttf", "segoeui.ttf", "arial.ttf"):
         for base in (Path("C:/Windows/Fonts"), Path("/usr/share/fonts/truetype/dejavu"), Path("/Library/Fonts")):
             if (base / name).exists():
@@ -444,6 +445,8 @@ class Painter:
         key = (text, id(font), fg, bg)
         img = self.cache.get(key)
         if img is None:
+            from PIL import Image, ImageDraw
+
             x0, y0, x1, y1 = font.getbbox(text)
             im = Image.new("RGB", (x1 + 2 * pad[0], max(y1, 1) + 2 * pad[1] + 2), tuple(reversed(bg)))
             ImageDraw.Draw(im).text((pad[0], pad[1]), text, font=font, fill=tuple(reversed(fg)))

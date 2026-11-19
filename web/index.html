@@ -16,7 +16,7 @@
       <img src="logo.svg" alt="" class="brand-logo" width="40" height="40">
       <div>
         <h1>VND Vision AI</h1>
-        <p>Nhận diện mệnh giá tiền Việt Nam · so sánh phương pháp truyền thống và học sâu</p>
+        <p>Nhận diện mệnh giá tiền Việt Nam · truyền thống, học sâu và kết hợp</p>
       </div>
     </div>
     <div class="status-pills" aria-live="polite">
@@ -64,7 +64,7 @@
           <select id="sel-camera" class="select" hidden aria-label="Chọn camera"></select>
           <button class="btn ghost" id="btn-cam-stop" disabled>Tắt camera</button>
         </div>
-        <p class="hint" id="cam-hint">Camera chỉ chạy trên trình duyệt của bạn; khung hình được gửi tới máy chủ cục bộ để nhận diện.</p>
+        <p class="hint" id="cam-hint">Camera chỉ chạy trên trình duyệt của bạn; khung hình được gửi tới máy chủ của ứng dụng để nhận diện.</p>
       </div>
 
       <!-- Tab 2: tải ảnh -->
@@ -97,6 +97,19 @@
         <span class="muted" id="result-source">Chưa có ảnh</span>
       </div>
 
+      <div class="tabs view-tabs" role="tablist" aria-label="Chọn mục">
+        <button role="tab" id="view-tab-compare" aria-selected="true" aria-controls="view-compare">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="7.5" height="14" rx="1.5"/><rect x="13.5" y="5" width="7.5" height="14" rx="1.5"/></svg>
+          So sánh hai phương pháp
+        </button>
+        <button role="tab" id="view-tab-hybrid" aria-selected="false" aria-controls="view-hybrid">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="12" r="5.5"/><circle cx="15" cy="12" r="5.5"/></svg>
+          Kết hợp YOLO + SIFT
+        </button>
+      </div>
+
+      <!-- ============ Mục 1: so sánh SIFT + màu và YOLO11n ============ -->
+      <div class="view" id="view-compare" role="tabpanel" aria-labelledby="view-tab-compare">
       <div class="compare" id="compare">
         <div class="stat"><span>Truyền thống</span><div id="cmp-sift"><b>—</b></div></div>
         <div class="stat"><span>YOLO11n</span><div id="cmp-yolo"><b>—</b></div></div>
@@ -146,10 +159,43 @@
           <ol class="notes"></ol>
         </article>
       </div>
+      </div>
+
+      <!-- ============ Mục 2: phương pháp kết hợp ============ -->
+      <div class="view" id="view-hybrid" role="tabpanel" aria-labelledby="view-tab-hybrid" hidden>
+        <ol class="pipeline" aria-label="Các bước của phương pháp kết hợp">
+          <li><b>1. YOLO11n định vị</b><span>Tìm khung bao từng tờ (ngưỡng tin cậy chọn trên tập valid)</span></li>
+          <li><b>2. SIFT + màu nhận diện</b><span>Mỗi vùng cắt được đối sánh với ảnh mẫu, kiểm chứng homography, kết hợp màu HSV</span></li>
+          <li><b>3. Quyết định</b><span>SIFT + màu đủ bằng chứng thì dùng mệnh giá đó; chưa kết luận thì theo YOLO hoặc để “?”</span></li>
+        </ol>
+
+        <article class="method wide" id="m-hybrid" data-state="idle">
+          <header>
+            <div>
+              <span class="tag hybrid">Kết hợp</span>
+              <h3>YOLO11n định vị + SIFT + màu HSV nhận diện</h3>
+              <p>Cùng cấu hình chế độ hybrid của realtime.py: SIFT + màu chỉ nhận mệnh giá khi đủ bằng chứng hình học (đúng 98,99% / 98,44% số tờ được xác nhận trên valid / test)</p>
+            </div>
+          </header>
+          <div class="canvas-wrap">
+            <canvas></canvas>
+            <div class="placeholder">Kết quả sẽ hiện ở đây</div>
+            <div class="spinner" aria-label="Đang nhận diện"></div>
+          </div>
+          <dl class="metrics">
+            <div><dt>Số tờ</dt><dd data-k="count">—</dd></div>
+            <div><dt>Tổng tiền</dt><dd data-k="total">—</dd></div>
+            <div><dt>Thời gian</dt><dd data-k="ms">—</dd></div>
+          </dl>
+          <p class="hybrid-summary" id="hybrid-summary"></p>
+          <ol class="notes"></ol>
+          <label class="switch"><input type="checkbox" id="chk-yolo-label" checked><span></span>Dùng nhãn YOLO khi SIFT + màu chưa kết luận</label>
+        </article>
+      </div>
     </section>
   </main>
 
-  <footer class="foot">Đồ án Thị giác máy tính · Nhóm 06 · Ảnh chỉ được xử lý trên máy chủ cục bộ</footer>
+  <footer class="foot">Đồ án Thị giác máy tính · Nhóm 06 · Ảnh chỉ được xử lý trong bộ nhớ máy chủ, không lưu lại</footer>
 
   <script src="app.js"></script>
 </body>

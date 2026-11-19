@@ -1,0 +1,25 @@
+# Chỉ tải lên những gì giao diện web cần (xem includeFiles trong vercel.json); bộ dữ liệu và kết quả đánh giá
+# (~450 MB) không cần cho hàm và làm chậm việc triển khai.
+/data/dataset
+/data/dataset_yolo*
+/data/label_500
+/data/raw_500
+/data/templates_train
+/colab_yolo
+/report
+/docs
+__pycache__/
+*.pt
+/requirements*.txt
+
+/results/*
+!/results/yolo
+/results/yolo/*
+!/results/yolo/yolo11n
+/results/yolo/yolo11n/*
+!/results/yolo/yolo11n/weights
+/results/yolo/yolo11n/weights/*
+!/results/yolo/yolo11n/weights/best.onnx
+!/results/yolo/evaluation_test
+/results/yolo/evaluation_test/*
+!/results/yolo/evaluation_test/results.json

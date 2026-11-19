@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 60,
+      "includeFiles": "{src/*.py,web/**,data/templates/**,data/test_images/**,data/color_model.npz,results/yolo/yolo11n/weights/best.onnx,results/yolo/evaluation_test/results.json}"
+    }
+  },
+  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
+}

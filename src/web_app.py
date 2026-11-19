@@ -8,6 +8,16 @@ Trình duyệt gửi cùng một ảnh (ảnh tải lên hoặc khung hình webc
 Hai API trả cùng định dạng: {"notes": [{"label", "quad", "score", "evidence"}], "total", "ms", "width", "height"}.
 Mỗi phương pháp có khóa riêng: một yêu cầu SIFT chậm không chặn YOLO.
 
+Mục "Kết hợp YOLO + SIFT" (cùng trang, tách khỏi phần so sánh hai phương pháp) dùng API thứ ba:
+  - POST /api/hybrid : YOLO11n định vị từng tờ, SIFT + màu nhận diện mệnh giá trên vùng cắt – cùng hàm
+                       Recognizers.classify_crop của realtime.py (vùng cắt <= 400 px, luật inlier riêng, cổng bằng
+                       chứng, CLAHE dự phòng). SIFT + màu chưa kết luận thì dùng nhãn YOLO (mặc định, như cấu hình
+                       "hybrid" khi đánh giá) hoặc để "?" (?yolo_label=0, như realtime.py). YOLO không thấy tờ nào thì
+                       thử ảnh xoay 180°, rồi SIFT trên toàn ảnh (detect_all).
+YOLO dùng best.pt qua ultralytics; nếu không có ultralytics (như khi triển khai trên Vercel, xem docs/vercel.md) thì
+dùng best.onnx qua cv2.dnn (yolo_onnx.py). Mô hình được nạp ở yêu cầu đầu tiên, nên `app` dùng được trực tiếp
+trong môi trường serverless (api/index.py).
+
 Chạy:  python src/web_app.py            rồi mở http://localhost:5000
        python src/web_app.py --port 8000
 """
@@ -21,14 +31,15 @@ import cv2
 import numpy as np
 from flask import Flask, abort, jsonify, request, send_from_directory
 
-from color_model import MODEL_PATH, ColorModel
-from evaluate_sift import MULTI_UPSCALE, ROOT, detect_all, load_templates, resize_max
+from evaluate_sift import MULTI_UPSCALE, ROOT, UNKNOWN, detect_all, resize_max
+from realtime import Recognizers
 
 sys.stdout.reconfigure(encoding="utf-8")
 
 WEB_DIR = ROOT / "web"
 SAMPLE_DIR = ROOT / "data" / "test_images"
 YOLO_WEIGHTS = ROOT / "results" / "yolo" / "yolo11n" / "weights" / "best.pt"
+YOLO_ONNX = YOLO_WEIGHTS.with_suffix(".onnx")
 YOLO_RESULTS = ROOT / "results" / "yolo" / "evaluation_test" / "results.json"
 # SIFT: ảnh lớn được thu về cạnh dài tối đa SIFT_MAX_SIDE; ảnh nhỏ cỡ bộ dữ liệu (≤ 640 px) được phóng to ×1,5 như
 # khi đánh giá nhiều tờ (MULTI_UPSCALE) để tờ nhỏ có thêm điểm đặc trưng.
@@ -43,27 +54,59 @@ class Models:
     """Nạp mô hình một lần khi khởi động."""
 
     def __init__(self):
-        print("Đang nạp ảnh mẫu SIFT và mô hình màu...", flush=True)
-        self.templates = load_templates()
-        self.color = ColorModel() if MODEL_PATH.exists() else None
+        print("Đang nạp ảnh mẫu SIFT (thường + CLAHE) và mô hình màu...", flush=True)
+        # Phần SIFT + màu của realtime.py (không nạp YOLO ở đó): dùng cho /api/sift và bước nhận diện của /api/hybrid
+        self.rec = Recognizers(want_yolo=False)
+        self.templates, self.color = self.rec.templates, self.rec.color
+        # Một khóa cho mọi việc chạy SIFT: CLAHE dự phòng của classify_crop đổi tạm biến toàn cục
+        # evaluate_sift.CLAHE_CLIP, nên /api/sift và /api/hybrid không được trích SIFT cùng lúc.
         self.sift_lock = threading.Lock()
         self.yolo_lock = threading.Lock()
-        self.yolo, self.yolo_error = None, ""
+        self.yolo, self.yolo_error, self.yolo_names, self.yolo_backend = None, "", {}, ""
         self.yolo_conf, self.yolo_agnostic = 0.35, True
         if YOLO_RESULTS.exists():
             chon = json.loads(YOLO_RESULTS.read_text(encoding="utf-8"))["chon_tren_valid"]["nhieu_to"]
             self.yolo_conf, self.yolo_agnostic = chon["conf"], chon["agnostic"]
         try:
-            from ultralytics import YOLO
-            print("Đang nạp YOLO11n...", flush=True)
-            self.yolo = YOLO(str(YOLO_WEIGHTS))
-            self.yolo.predict(np.zeros((64, 64, 3), np.uint8), device="cpu", verbose=False)  # khởi tạo
+            try:
+                from ultralytics import YOLO
+            except ImportError:  # Vercel: không có torch / ultralytics -> dùng bản ONNX
+                from yolo_onnx import OnnxYolo
+                print("Đang nạp YOLO11n (ONNX)...", flush=True)
+                self.yolo = OnnxYolo(YOLO_ONNX)
+                self.yolo_backend = "onnx"
+            else:
+                print("Đang nạp YOLO11n...", flush=True)
+                self.yolo = YOLO(str(YOLO_WEIGHTS))
+                self.yolo_backend = "pt"
+            self.yolo_names = self.yolo.names
+            self.predict_yolo(np.zeros((64, 64, 3), np.uint8))  # khởi tạo
         except Exception as exc:  # thiếu ultralytics / trọng số: vẫn dùng được phương pháp truyền thống
-            self.yolo_error = str(exc).splitlines()[0]
+            self.yolo, self.yolo_error = None, str(exc).splitlines()[0]
             print("Không nạp được YOLO:", self.yolo_error, flush=True)
+
+    def predict_yolo(self, img):
+        """[(x1, y1, x2, y2, độ tin cậy, chỉ số lớp)] với ngưỡng và kiểu NMS chọn trên valid."""
+        if self.yolo_backend == "onnx":
+            return self.yolo.predict(img, conf=self.yolo_conf, agnostic=self.yolo_agnostic)
+        r = self.yolo.predict(img, conf=self.yolo_conf, imgsz=640, agnostic_nms=self.yolo_agnostic,
+                              device="cpu", verbose=False)[0]
+        return [(*xyxy, p, int(c)) for xyxy, c, p in zip(r.boxes.xyxy.tolist(), r.boxes.cls.tolist(),
+                                                         r.boxes.conf.tolist())]
 
 
 MODELS = None
+_MODELS_LOCK = threading.Lock()
+
+
+def models():
+    """Nạp mô hình ở lần gọi đầu tiên (chạy cục bộ: nạp sẵn trong main(); serverless: ở yêu cầu đầu tiên)."""
+    global MODELS
+    if MODELS is None:
+        with _MODELS_LOCK:
+            if MODELS is None:
+                MODELS = Models()
+    return MODELS
 
 
 def read_image():
@@ -95,9 +138,10 @@ def api_sift():
     small = resize_max(img, SIFT_MAX_SIDE)
     scale = img.shape[1] / small.shape[1]
     upscale = MULTI_UPSCALE if max(small.shape[:2]) <= 640 else 1.0
-    with MODELS.sift_lock:
+    m = models()
+    with m.sift_lock:
         t0 = time.perf_counter()
-        found = detect_all(small, MODELS.templates, MODELS.color, upscale=upscale)
+        found = detect_all(small, m.templates, m.color, upscale=upscale)
         seconds = time.perf_counter() - t0
     h, w = img.shape[:2]
     notes = [{"label": label, "quad": clip_to_image(np.float32(box) * scale, w, h), "score": n,
@@ -107,26 +151,82 @@ def api_sift():
 
 @app.post("/api/yolo")
 def api_yolo():
-    if MODELS.yolo is None:
-        return jsonify({"error": "Chưa nạp được YOLO: " + MODELS.yolo_error}), 503
+    m = models()
+    if m.yolo is None:
+        return jsonify({"error": "Chưa nạp được YOLO: " + m.yolo_error}), 503
     img = read_image()
-    with MODELS.yolo_lock:
+    with m.yolo_lock:
         t0 = time.perf_counter()
-        r = MODELS.yolo.predict(img, conf=MODELS.yolo_conf, imgsz=640, agnostic_nms=MODELS.yolo_agnostic,
-                                device="cpu", verbose=False)[0]
+        dets = m.predict_yolo(img)
         seconds = time.perf_counter() - t0
-    notes = []
-    for (x1, y1, x2, y2), c, p in zip(r.boxes.xyxy.tolist(), r.boxes.cls.tolist(), r.boxes.conf.tolist()):
-        notes.append({"label": MODELS.yolo.names[int(c)], "quad": [[x1, y1], [x2, y1], [x2, y2], [x1, y2]],
-                      "score": round(p, 3), "evidence": f"độ tin cậy {p:.2f}"})
-    return response(notes, img, seconds, "yolo", conf=MODELS.yolo_conf)
+    notes = [{"label": m.yolo_names[c], "quad": [[x1, y1], [x2, y1], [x2, y2], [x1, y2]],
+              "score": round(p, 3), "evidence": f"độ tin cậy {p:.2f}"} for x1, y1, x2, y2, p, c in dets]
+    return response(notes, img, seconds, "yolo", conf=m.yolo_conf)
+
+
+def yolo_boxes(m, img):
+    """Khung YOLO [(nhãn, [x, y, w, h], độ tin cậy)]; không thấy tờ nào thì thử ảnh xoay 180° (YOLO hay bỏ sót tờ lộn
+    ngược, như realtime.py). Trả thêm cờ cho biết có phải dùng ảnh xoay không."""
+    H, W = img.shape[:2]
+    with m.yolo_lock:
+        dets = m.predict_yolo(img)
+        if dets:
+            return [(m.yolo_names[c], [x1, y1, x2 - x1, y2 - y1], p) for x1, y1, x2, y2, p, c in dets], False
+        dets = m.predict_yolo(cv2.rotate(img, cv2.ROTATE_180))
+    return [(m.yolo_names[c], [W - x2, H - y2, x2 - x1, y2 - y1], p) for x1, y1, x2, y2, p, c in dets], True
+
+
+@app.post("/api/hybrid")
+def api_hybrid():
+    m = models()
+    if m.yolo is None:
+        return jsonify({"error": "Phương pháp kết hợp cần YOLO: " + m.yolo_error}), 503
+    use_yolo_label = request.args.get("yolo_label", "1") != "0"
+    img = read_image()
+    h, w = img.shape[:2]
+    t0 = time.perf_counter()
+    boxes, flipped = yolo_boxes(m, img)
+    t1 = time.perf_counter()
+    notes, fallback = [], False
+    with m.sift_lock:
+        for ylab, (x, y, bw, bh), p in boxes:
+            pred, inliers, clahe = m.rec.classify_crop(img, [x, y, bw, bh], ylab)
+            note = {"quad": [[x, y], [x + bw, y], [x + bw, y + bh], [x, y + bh]], "yolo_label": ylab,
+                    "yolo_conf": round(p, 3), "inliers": inliers, "clahe": clahe}
+            if pred != UNKNOWN:
+                note.update(label=pred, source="sift", agree=pred == ylab,
+                            evidence=f"{inliers} cặp điểm khớp" + (", CLAHE" if clahe else ""))
+            elif use_yolo_label:
+                note.update(label=ylab, source="yolo", agree=None, evidence=f"theo YOLO ({p:.2f})")
+            else:
+                note.update(label=None, source="unknown", agree=None, evidence="SIFT + màu chưa kết luận")
+            notes.append(note)
+        if not boxes:
+            # YOLO không thấy tờ nào (kể cả ảnh xoay): SIFT tự tìm mọi tờ như /api/sift
+            fallback = True
+            small = resize_max(img, SIFT_MAX_SIDE)
+            scale = img.shape[1] / small.shape[1]
+            upscale = MULTI_UPSCALE if max(small.shape[:2]) <= 640 else 1.0
+            for label, n, box in detect_all(small, m.templates, m.color, upscale=upscale):
+                notes.append({"quad": clip_to_image(np.float32(box) * scale, w, h), "label": label,
+                              "source": "sift_full", "agree": None, "yolo_label": None, "yolo_conf": None,
+                              "inliers": n, "clahe": False,
+                              "evidence": (f"{n} cặp điểm khớp" if n else "theo màu") + ", SIFT toàn ảnh"})
+    t2 = time.perf_counter()
+    known = [n for n in notes if n["label"] is not None]
+    return jsonify({"method": "hybrid", "notes": notes, "total": sum(int(n["label"]) for n in known),
+                    "ms": round((t2 - t0) * 1000), "ms_yolo": round((t1 - t0) * 1000),
+                    "ms_sift": round((t2 - t1) * 1000), "width": w, "height": h, "flipped": flipped,
+                    "fallback": fallback, "yolo_label": use_yolo_label, "yolo_conf": m.yolo_conf})
 
 
 @app.get("/api/info")
 def api_info():
-    return jsonify({"yolo": MODELS.yolo is not None, "yolo_error": MODELS.yolo_error, "yolo_conf": MODELS.yolo_conf,
-                    "yolo_classes": list(MODELS.yolo.names.values()) if MODELS.yolo else [],
-                    "sift_templates": len(MODELS.templates), "color_model": MODELS.color is not None,
+    m = models()
+    return jsonify({"yolo": m.yolo is not None, "yolo_error": m.yolo_error, "yolo_conf": m.yolo_conf,
+                    "yolo_backend": m.yolo_backend if m.yolo else "",
+                    "yolo_classes": list(m.yolo_names.values()),
+                    "sift_templates": len(m.templates), "color_model": m.color is not None,
                     "samples": sorted(p.name for p in SAMPLE_DIR.glob("*") if p.suffix.lower() in (".jpg", ".jpeg", ".png"))})
 
 
@@ -146,12 +246,11 @@ def static_file(name):
 
 
 def main():
-    global MODELS
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=5000)
     args = parser.parse_args()
-    MODELS = Models()
+    models()
     print(f"Mở trình duyệt tại http://localhost:{args.port}", flush=True)
     app.run(host=args.host, port=args.port, threaded=True)
 

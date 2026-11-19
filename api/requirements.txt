@@ -1,0 +1,5 @@
+# Thư viện cho hàm Vercel (api/index.py). Không có torch / ultralytics / onnxruntime / matplotlib để gói hàm dưới giới
+# hạn 250 MB: YOLO chạy best.onnx bằng cv2.dnn (src/yolo_onnx.py); OpenCV dùng bản headless (Vercel không có libGL).
+flask>=3.0
+numpy
+opencv-python-headless>=5.0

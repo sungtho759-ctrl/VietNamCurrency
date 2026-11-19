@@ -11,14 +11,26 @@ const METHODS = {
 };
 const $ = (id) => document.getElementById(id);
 const vnd = (v) => Number(v).toLocaleString("vi-VN") + " đ";
+const fmtMs = (ms) => (ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${ms} ms`);
+// Mục "Kết hợp YOLO + SIFT": tách khỏi hai thẻ so sánh, dùng API riêng
+const HYBRID_EL = document.getElementById("m-hybrid");
+const elOf = (key) => (key === "hybrid" ? HYBRID_EL : METHODS[key].el);
 
 const state = {
-  last: { sift: null, yolo: null },  // kết quả gần nhất của mỗi phương pháp
-  busy: { sift: false, yolo: false },
+  view: "compare",                               // mục đang mở: "compare" (SIFT + màu và YOLO) hoặc "hybrid"
+  last: { sift: null, yolo: null, hybrid: null },  // kết quả gần nhất của mỗi phương pháp
+  busy: { sift: false, yolo: false, hybrid: false },
   stream: null,
   live: false,
+  loops: new Set(),                              // các vòng nhận diện liên tục đang chạy
   sourceLabel: "",
+  input: null,                                   // ảnh gần nhất {blob, bitmap, label, id}: chạy lại khi đổi mục
+  done: { compare: 0, hybrid: 0 },               // id ảnh mà mỗi mục đã nhận diện
+  seq: 0,
 };
+// Các phương pháp thuộc mục đang mở
+const activeKeys = () => (state.view === "hybrid" ? ["hybrid"] : Object.keys(METHODS));
+const anyBusy = () => activeKeys().some((k) => state.busy[k]);
 
 /* ------------------------------------------------------------------ Thông tin máy chủ */
 async function loadInfo() {
@@ -65,15 +77,44 @@ document.querySelector(".tabs").addEventListener("keydown", (e) => {
   }
 });
 
+/* ------------------------------------------------------------------ Mục: so sánh / kết hợp */
+function selectView(view) {
+  state.view = view;
+  for (const v of ["compare", "hybrid"]) {
+    $(`view-tab-${v}`).setAttribute("aria-selected", String(v === view));
+    $(`view-${v}`).hidden = v !== view;
+  }
+  if (state.live) setLive(true);  // chuyển các vòng nhận diện liên tục sang mục mới
+  else if (state.input && state.done[view] !== state.input.id) rerun();
+}
+function rerun() {
+  const i = state.input;
+  if (i && !anyBusy()) recognizeBoth(i.blob, i.bitmap, i.label);
+}
+$("view-tab-compare").onclick = () => selectView("compare");
+$("view-tab-hybrid").onclick = () => selectView("hybrid");
+document.querySelector(".view-tabs").addEventListener("keydown", (e) => {
+  if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+    const next = state.view === "compare" ? "hybrid" : "compare";
+    selectView(next);
+    $(`view-tab-${next}`).focus();
+  }
+});
+$("chk-yolo-label").onchange = () => { if (!state.live) rerun(); };
+
 /* ------------------------------------------------------------------ Nhận diện */
-// Gửi cùng một ảnh tới cả hai phương pháp; mỗi kết quả hiện ngay khi về (YOLO thường về trước).
+// Gửi ảnh tới các phương pháp của mục đang mở. Mục so sánh: cùng một ảnh tới cả hai phương pháp, mỗi kết quả hiện
+// ngay khi về (YOLO thường về trước).
 function recognizeBoth(blob, bitmap, label) {
   state.sourceLabel = label;
   $("result-source").textContent = label;
-  return Promise.all(Object.keys(METHODS).map((k) => recognize(k, blob, bitmap)));
+  if (state.input?.blob !== blob) state.input = { blob, bitmap, label, id: ++state.seq };
+  state.done[state.view] = state.input.id;
+  return Promise.all(activeKeys().map((k) => recognize(k, blob, bitmap)));
 }
 
 async function recognize(key, blob, bitmap) {
+  if (key === "hybrid") return recognizeHybrid(blob, bitmap);
   const m = METHODS[key];
   state.busy[key] = true;
   m.el.dataset.state = "loading";
@@ -103,9 +144,8 @@ function drawImageOnly(el, bitmap) {
   c.getContext("2d").drawImage(bitmap, 0, 0);
 }
 
-function render(key, data, bitmap) {
-  const el = METHODS[key].el;
-  el.dataset.state = "done";
+// Vẽ ảnh và các khung [{quad, text, color, dashed}] (tọa độ theo ảnh máy chủ nhận: data.width x data.height)
+function drawBoxes(el, bitmap, data, items) {
   const c = el.querySelector("canvas");
   c.width = bitmap.width;
   c.height = bitmap.height;
@@ -114,19 +154,19 @@ function render(key, data, bitmap) {
   const sx = bitmap.width / data.width, sy = bitmap.height / data.height;
   const lw = Math.max(2, Math.round(Math.max(c.width, c.height) / 260));
   const fs = Math.max(13, Math.round(Math.max(c.width, c.height) / 34));
-  data.notes.forEach((n, i) => {
-    const color = NOTE_COLOR[n.label] || "#0f766e";
-    const pts = n.quad.map(([x, y]) => [x * sx, y * sy]);
+  items.forEach(({ quad, text, color, dashed }) => {
+    const pts = quad.map(([x, y]) => [x * sx, y * sy]);
     g.lineWidth = lw;
     g.strokeStyle = color;
     g.fillStyle = color + "22";
+    g.setLineDash(dashed ? [lw * 3, lw * 2] : []);
     g.beginPath();
     pts.forEach(([x, y], j) => (j ? g.lineTo(x, y) : g.moveTo(x, y)));
     g.closePath();
     g.fill();
     g.stroke();
+    g.setLineDash([]);
     // nhãn: góc trên trái của khung, giữ trong ảnh
-    const text = `${i + 1}. ${vnd(n.label)}`;
     g.font = `600 ${fs}px "Be Vietnam Pro", "Segoe UI", sans-serif`;
     const tw = g.measureText(text).width + fs * 0.8, th = fs * 1.5;
     let x = Math.min(...pts.map((p) => p[0])), y = Math.min(...pts.map((p) => p[1])) - th;
@@ -140,10 +180,17 @@ function render(key, data, bitmap) {
     g.textBaseline = "middle";
     g.fillText(text, x + fs * 0.4, y + th / 2);
   });
+}
+
+function render(key, data, bitmap) {
+  const el = METHODS[key].el;
+  el.dataset.state = "done";
+  drawBoxes(el, bitmap, data, data.notes.map((n, i) => (
+    { quad: n.quad, text: `${i + 1}. ${vnd(n.label)}`, color: NOTE_COLOR[n.label] || "#0f766e" })));
 
   setMetric(el, "count", `${data.notes.length} tờ`);
   setMetric(el, "total", vnd(data.total));
-  setMetric(el, "ms", data.ms >= 1000 ? `${(data.ms / 1000).toFixed(2)} s` : `${data.ms} ms`);
+  setMetric(el, "ms", fmtMs(data.ms));
   const ol = el.querySelector(".notes");
   ol.innerHTML = "";
   if (!data.notes.length) {
@@ -158,11 +205,100 @@ function render(key, data, bitmap) {
   });
 }
 
+/* ------------------------------------------------------------------ Kết hợp YOLO + SIFT */
+const SOURCE = {
+  sift: ["SIFT + màu", "sift"], sift_full: ["SIFT toàn ảnh", "sift_full"],
+  yolo: ["theo YOLO", "yolo"], unknown: ["chưa rõ", "unknown"],
+};
+const UNSURE_COLOR = "#8a918e";
+
+async function recognizeHybrid(blob, bitmap) {
+  state.busy.hybrid = true;
+  HYBRID_EL.dataset.state = "loading";
+  if (HYBRID_EL.querySelector("canvas").width === 0 || !state.live) drawImageOnly(HYBRID_EL, bitmap);
+  const form = new FormData();
+  form.append("image", blob, "frame.jpg");
+  try {
+    const url = `/api/hybrid?yolo_label=${$("chk-yolo-label").checked ? 1 : 0}`;
+    const res = await fetch(url, { method: "POST", body: form });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || `Lỗi máy chủ (${res.status})`);
+    state.last.hybrid = data;
+    renderHybrid(data, bitmap);
+  } catch (err) {
+    state.last.hybrid = null;
+    renderError("hybrid", err.message, bitmap);
+  } finally {
+    state.busy.hybrid = false;
+    if (HYBRID_EL.dataset.state === "loading") HYBRID_EL.dataset.state = "done";
+  }
+}
+
+function renderHybrid(data, bitmap) {
+  const el = HYBRID_EL;
+  el.dataset.state = "done";
+  // Khung nét đứt: mệnh giá không do SIFT + màu xác nhận (theo YOLO hoặc "?")
+  drawBoxes(el, bitmap, data, data.notes.map((n, i) => ({
+    quad: n.quad, text: `${i + 1}. ${n.label ? vnd(n.label) : "?"}`,
+    color: n.label ? NOTE_COLOR[n.label] || "#0f766e" : UNSURE_COLOR,
+    dashed: !n.source.startsWith("sift"),
+  })));
+
+  const known = data.notes.filter((n) => n.label);
+  const unsure = data.notes.length - known.length;
+  setMetric(el, "count", `${known.length} tờ` + (unsure ? ` + ${unsure} ?` : ""));
+  setMetric(el, "total", vnd(data.total));
+  setMetric(el, "ms", fmtMs(data.ms));
+  el.querySelector('[data-k="ms"]').title = `YOLO ${data.ms_yolo} ms · SIFT + màu ${data.ms_sift} ms`;
+
+  const count = (src) => data.notes.filter((n) => n.source === src).length;
+  const disagree = data.notes.filter((n) => n.agree === false).length;
+  let sum = "";
+  if (data.fallback) {
+    sum = `YOLO không thấy tờ nào (kể cả khi xoay ảnh 180°), đã dùng SIFT + màu trên toàn ảnh (${fmtMs(data.ms_sift)}).`;
+  } else if (data.notes.length) {
+    sum = `YOLO tìm ${data.notes.length} tờ (${fmtMs(data.ms_yolo)})${data.flipped ? " trên ảnh xoay 180°" : ""}`
+      + ` · SIFT + màu xác nhận ${count("sift")} tờ (${fmtMs(data.ms_sift)})`
+      + (count("yolo") ? ` · ${count("yolo")} tờ theo nhãn YOLO` : "")
+      + (count("unknown") ? ` · ${count("unknown")} tờ chưa rõ` : "")
+      + (disagree ? ` · <span class="warn">${disagree} tờ YOLO nhận khác SIFT + màu (dùng kết quả SIFT + màu)</span>` : "");
+  }
+  $("hybrid-summary").innerHTML = sum;
+
+  const ol = el.querySelector(".notes");
+  ol.innerHTML = "";
+  if (!data.notes.length) {
+    ol.innerHTML = `<li class="empty">Không tìm thấy tờ tiền nào</li>`;
+    return;
+  }
+  data.notes.forEach((n, i) => {
+    const [badge, cls] = SOURCE[n.source];
+    const yolo = n.yolo_label ? `YOLO: ${vnd(n.yolo_label)} (${n.yolo_conf.toFixed(2)})` : "";
+    let ev;
+    if (n.source === "sift") {
+      ev = `${n.inliers} cặp điểm khớp${n.clahe ? ", CLAHE" : ""} · `
+        + (n.agree ? yolo : `<span class="warn">${yolo}</span>`);
+    } else if (n.source === "sift_full") {
+      ev = n.evidence;
+    } else {
+      ev = `SIFT + màu chưa kết luận · ${yolo}`;
+    }
+    const color = n.label ? NOTE_COLOR[n.label] || "#0f766e" : UNSURE_COLOR;
+    const li = document.createElement("li");
+    if (n.agree === false) li.className = "disagree";
+    li.innerHTML = `<span class="idx" style="background:${color}">${i + 1}</span>`
+      + `<span class="val">${n.label ? vnd(n.label) : "?"}</span><span class="badge ${cls}">${badge}</span>`
+      + `<span class="ev">${ev}</span>`;
+    ol.appendChild(li);
+  });
+}
+
 function renderError(key, msg, bitmap) {
-  const el = METHODS[key].el;
+  const el = elOf(key);
   el.dataset.state = "error";
   if (bitmap) drawImageOnly(el, bitmap);
   for (const k of ["count", "total", "ms"]) setMetric(el, k, "—");
+  if (key === "hybrid") $("hybrid-summary").innerHTML = "";
   el.querySelector(".notes").innerHTML = `<li class="error">${msg}</li>`;
 }
 
@@ -223,7 +359,7 @@ async function useFile(file) {
 $("btn-run").onclick = runFile;
 
 async function runFile() {
-  if (!currentFile || state.busy.sift || state.busy.yolo) return;
+  if (!currentFile || anyBusy()) return;
   let bitmap;
   try {
     bitmap = await createImageBitmap(currentFile, { imageOrientation: "from-image" });
@@ -238,11 +374,15 @@ async function runFile() {
   $("btn-run").disabled = false;
 }
 
+// Thu ảnh về cạnh dài tối đa MAX_SEND_SIDE trước khi gửi: máy chủ chỉ dùng tới 800 px (SIFT) / 640 px (YOLO), và
+// Vercel từ chối thân yêu cầu lớn hơn 4,5 MB. Khung trả về được vẽ lại theo tỷ lệ data.width / bitmap.width.
+const MAX_SEND_SIDE = 1600;
 function toJpeg(source, quality = 0.85) {
+  const k = Math.min(1, MAX_SEND_SIDE / Math.max(source.width, source.height));
   const c = document.createElement("canvas");
-  c.width = source.width;
-  c.height = source.height;
-  c.getContext("2d").drawImage(source, 0, 0);
+  c.width = Math.round(source.width * k);
+  c.height = Math.round(source.height * k);
+  c.getContext("2d").drawImage(source, 0, 0, c.width, c.height);
   return new Promise((r) => c.toBlob(r, "image/jpeg", quality));
 }
 
@@ -319,13 +459,13 @@ async function grabFrame() {
 }
 
 $("btn-snap").onclick = async () => {
-  if (state.busy.sift || state.busy.yolo) return;
+  if (anyBusy()) return;
   const f = await grabFrame();
   if (f) recognizeBoth(f.blob, f.bitmap, "Ảnh chụp từ camera");
 };
 
-// Nhận diện liên tục: mỗi phương pháp lấy khung hình mới nhất ngay khi xong lần trước, nên YOLO (nhanh) cập nhật
-// nhiều lần trong lúc SIFT (chậm) xử lý một khung – thấy rõ chênh lệch tốc độ.
+// Nhận diện liên tục: mỗi phương pháp của mục đang mở lấy khung hình mới nhất ngay khi xong lần trước, nên YOLO
+// (nhanh) cập nhật nhiều lần trong lúc SIFT (chậm) xử lý một khung – thấy rõ chênh lệch tốc độ.
 function setLive(on) {
   state.live = on && !!state.stream;
   $("chk-live").checked = state.live;
@@ -333,18 +473,25 @@ function setLive(on) {
   $("btn-snap").disabled = !state.stream || state.live;
   if (state.live) {
     $("result-source").textContent = "Camera · nhận diện liên tục";
-    for (const k of Object.keys(METHODS)) liveLoop(k);
+    for (const k of activeKeys()) liveLoop(k);
   }
 }
 $("chk-live").onchange = (e) => setLive(e.target.checked);
 
 async function liveLoop(key) {
-  while (state.live) {
-    if (state.busy[key]) { await sleep(50); continue; }
-    const f = await grabFrame();
-    if (!f) { await sleep(100); continue; }
-    await recognize(key, f.blob, f.bitmap);
-    await sleep(key === "yolo" ? 60 : 150);  // nhường máy chủ / trình duyệt
+  if (state.loops.has(key)) return;  // vòng của phương pháp này vẫn đang chạy (đổi mục qua lại nhanh)
+  state.loops.add(key);
+  try {
+    // Dừng khi tắt nhận diện liên tục hoặc chuyển sang mục không có phương pháp này
+    while (state.live && activeKeys().includes(key)) {
+      if (state.busy[key]) { await sleep(50); continue; }
+      const f = await grabFrame();
+      if (!f) { await sleep(100); continue; }
+      await recognize(key, f.blob, f.bitmap);
+      await sleep(key === "yolo" ? 60 : 150);  // nhường máy chủ / trình duyệt
+    }
+  } finally {
+    state.loops.delete(key);
   }
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
