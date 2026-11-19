@@ -11,9 +11,12 @@ Mỗi phương pháp có khóa riêng: một yêu cầu SIFT chậm không chặ
 Mục "Kết hợp YOLO + SIFT" (cùng trang, tách khỏi phần so sánh hai phương pháp) dùng API thứ ba:
   - POST /api/hybrid : YOLO11n định vị từng tờ, SIFT + màu nhận diện mệnh giá trên vùng cắt – cùng hàm
                        Recognizers.classify_crop của realtime.py (vùng cắt <= 400 px, luật inlier riêng, cổng bằng
-                       chứng, CLAHE dự phòng). SIFT + màu chưa kết luận thì dùng nhãn YOLO (mặc định, như cấu hình
-                       "hybrid" khi đánh giá) hoặc để "?" (?yolo_label=0, như realtime.py). YOLO không thấy tờ nào thì
-                       thử ảnh xoay 180°, rồi SIFT trên toàn ảnh (detect_all).
+                       chứng, CLAHE dự phòng). SIFT + màu chưa kết luận thì để "?", trừ khi SIFT đã thấy hoa văn tờ
+                       tiền (ứng viên >= YOLO_LABEL_MIN_PATTERN inlier, khung gần chữ nhật) nhưng chưa chắc mệnh giá:
+                       khi đó dùng nhãn YOLO (mặc định; ?yolo_label=0 tắt hẳn). YOLO không thấy tờ nào thì thử ảnh
+                       xoay 180°, rồi SIFT trên toàn ảnh (detect_all) với cùng cổng bằng chứng như realtime.py.
+                       Không dùng nhãn YOLO vô điều kiện: YOLO chỉ học ảnh có tờ tiền nên coi thẻ ATM, thẻ bảo hiểm y tế
+                       là tờ tiền, kể cả với độ tin cậy cao (docs/vercel.md, mục "Vật không phải tiền").
 YOLO dùng best.pt qua ultralytics; nếu không có ultralytics (như khi triển khai trên Vercel, xem docs/vercel.md) thì
 dùng best.onnx qua cv2.dnn (yolo_onnx.py). Mô hình được nạp ở yêu cầu đầu tiên, nên `app` dùng được trực tiếp
 trong môi trường serverless (api/index.py).
@@ -31,8 +34,8 @@ import cv2
 import numpy as np
 from flask import Flask, abort, jsonify, request, send_from_directory
 
-from evaluate_sift import MULTI_UPSCALE, ROOT, UNKNOWN, detect_all, resize_max
-from realtime import Recognizers
+from evaluate_sift import MIN_INLIERS, MULTI_UPSCALE, ROOT, UNKNOWN, detect_all, quad_angle_dev, resize_max
+from realtime import EVIDENCE_ANGLE, Recognizers
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -44,6 +47,11 @@ YOLO_RESULTS = ROOT / "results" / "yolo" / "evaluation_test" / "results.json"
 # SIFT: ảnh lớn được thu về cạnh dài tối đa SIFT_MAX_SIDE; ảnh nhỏ cỡ bộ dữ liệu (≤ 640 px) được phóng to ×1,5 như
 # khi đánh giá nhiều tờ (MULTI_UPSCALE) để tờ nhỏ có thêm điểm đặc trưng.
 SIFT_MAX_SIDE = 800
+# Kết hợp: chỉ dùng nhãn YOLO cho khung SIFT + màu chưa kết luận khi có ứng viên SIFT >= N inlier với khung gần chữ
+# nhật (hoa văn tờ tiền, chưa chắc mệnh giá). Chọn trên valid trong các luật không để lọt vật không phải tiền (246 biến
+# thể của 6 ảnh thẻ ATM / bảo hiểm y tế: 0 bị báo ra tiền): F1 valid 88,52% / test 87,14%. Luôn dùng nhãn YOLO cho F1
+# 94,83% / 95,51% nhưng 132/246 biến thể thẻ bị báo ra tiền; ngưỡng độ tin cậy YOLO >= 0,8 vẫn lọt 34/246.
+YOLO_LABEL_MIN_PATTERN = 8
 MAX_UPLOAD_MB = 15
 
 app = Flask(__name__, static_folder=None)
@@ -190,28 +198,33 @@ def api_hybrid():
     notes, fallback = [], False
     with m.sift_lock:
         for ylab, (x, y, bw, bh), p in boxes:
-            pred, inliers, clahe = m.rec.classify_crop(img, [x, y, bw, bh], ylab)
+            pred, inliers, clahe, pattern = m.rec.classify_crop(img, [x, y, bw, bh], ylab, with_pattern=True)
             note = {"quad": [[x, y], [x + bw, y], [x + bw, y + bh], [x, y + bh]], "yolo_label": ylab,
-                    "yolo_conf": round(p, 3), "inliers": inliers, "clahe": clahe}
+                    "yolo_conf": round(p, 3), "inliers": inliers, "clahe": clahe, "pattern": pattern}
             if pred != UNKNOWN:
                 note.update(label=pred, source="sift", agree=pred == ylab,
                             evidence=f"{inliers} cặp điểm khớp" + (", CLAHE" if clahe else ""))
-            elif use_yolo_label:
-                note.update(label=ylab, source="yolo", agree=None, evidence=f"theo YOLO ({p:.2f})")
+            elif use_yolo_label and pattern >= YOLO_LABEL_MIN_PATTERN:
+                note.update(label=ylab, source="yolo", agree=None,
+                            evidence=f"SIFT thấy hoa văn tờ tiền ({pattern} điểm) nhưng chưa chắc mệnh giá")
             else:
                 note.update(label=None, source="unknown", agree=None, evidence="SIFT + màu chưa kết luận")
             notes.append(note)
         if not boxes:
-            # YOLO không thấy tờ nào (kể cả ảnh xoay): SIFT tự tìm mọi tờ như /api/sift
+            # YOLO không thấy tờ nào (kể cả ảnh xoay): SIFT tự tìm mọi tờ như /api/sift, nhưng chỉ nhận tờ có bằng
+            # chứng hình học như realtime.py (Recognizers.sift): >= MIN_INLIERS cặp khớp và khung gần chữ nhật – không
+            # có cổng này, vật không phải tiền (thẻ ATM) bị báo mệnh giá nhờ vài điểm khớp ngẫu nhiên hoặc chỉ theo màu.
             fallback = True
             small = resize_max(img, SIFT_MAX_SIDE)
             scale = img.shape[1] / small.shape[1]
             upscale = MULTI_UPSCALE if max(small.shape[:2]) <= 640 else 1.0
             for label, n, box in detect_all(small, m.templates, m.color, upscale=upscale):
+                if n < MIN_INLIERS or quad_angle_dev(np.float32(box)) > EVIDENCE_ANGLE:
+                    continue
                 notes.append({"quad": clip_to_image(np.float32(box) * scale, w, h), "label": label,
                               "source": "sift_full", "agree": None, "yolo_label": None, "yolo_conf": None,
-                              "inliers": n, "clahe": False,
-                              "evidence": (f"{n} cặp điểm khớp" if n else "theo màu") + ", SIFT toàn ảnh"})
+                              "inliers": n, "clahe": False, "pattern": n,
+                              "evidence": f"{n} cặp điểm khớp, SIFT toàn ảnh"})
     t2 = time.perf_counter()
     known = [n for n in notes if n["label"] is not None]
     return jsonify({"method": "hybrid", "notes": notes, "total": sum(int(n["label"]) for n in known),

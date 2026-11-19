@@ -281,7 +281,8 @@ function renderHybrid(data, bitmap) {
     } else if (n.source === "sift_full") {
       ev = n.evidence;
     } else {
-      ev = `SIFT + màu chưa kết luận · ${yolo}`;
+      // Theo YOLO: SIFT thấy hoa văn tờ tiền nhưng chưa chắc mệnh giá. "?": nhãn YOLO chỉ để tham khảo, không cộng
+      ev = n.source === "yolo" ? `${n.evidence} · ${yolo}` : `SIFT + màu chưa kết luận · ${yolo.replace("YOLO:", "YOLO đoán")}`;
     }
     const color = n.label ? NOTE_COLOR[n.label] || "#0f766e" : UNSURE_COLOR;
     const li = document.createElement("li");

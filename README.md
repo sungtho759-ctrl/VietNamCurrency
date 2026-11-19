@@ -134,10 +134,18 @@ so sánh cho biết hai kết quả có trùng khớp không và phương pháp 
   đầu vào, đổi mục thì ảnh đang có được nhận diện lại): YOLO11n định vị từng tờ, SIFT + màu nhận diện mệnh giá trên vùng
   cắt (`POST /api/hybrid`, cùng hàm `Recognizers.classify_crop` và cấu hình chế độ `hybrid` của `realtime.py`: vùng cắt
   ≤ 400 px, luật inlier riêng, cổng bằng chứng, CLAHE dự phòng). Mỗi tờ ghi rõ nguồn của mệnh giá: **SIFT + màu** (khung
-  nét liền, kèm số cặp điểm khớp và nhãn YOLO để đối chiếu; tờ YOLO nhận khác được tô vàng), **theo YOLO** khi SIFT +
-  màu chưa kết luận (khung nét đứt; tắt công tắc "Dùng nhãn YOLO…" thì hiện "?" và không tính vào tổng tiền, như
-  `realtime.py`). YOLO không thấy tờ nào thì thử ảnh xoay 180°, rồi SIFT + màu trên toàn ảnh. Thời gian được tách thành
-  phần YOLO và phần SIFT + màu.
+  nét liền, kèm số cặp điểm khớp và nhãn YOLO để đối chiếu; tờ YOLO nhận khác được tô vàng) hoặc **"?"** khi SIFT + màu
+  chưa kết luận (khung xám nét đứt, không tính vào tổng tiền, như `realtime.py`). Nhãn YOLO chỉ được dùng cho khung chưa
+  kết luận khi SIFT đã thấy hoa văn tờ tiền (ứng viên ≥ 8 cặp khớp, khung homography gần chữ nhật) nhưng chưa chắc mệnh
+  giá (`YOLO_LABEL_MIN_PATTERN` trong `web_app.py`; tắt công tắc "Dùng nhãn YOLO…" thì luôn hiện "?"). YOLO không thấy
+  tờ nào thì thử ảnh xoay 180°, rồi SIFT + màu trên toàn ảnh với cùng cổng bằng chứng. Thời gian được tách thành phần
+  YOLO và phần SIFT + màu.
+- **Vì sao không dùng nhãn YOLO vô điều kiện:** YOLO chỉ học ảnh có tờ tiền nên coi thẻ ATM, thẻ bảo hiểm y tế là tờ
+  tiền, kể cả với độ tin cậy cao. Trên 246 biến thể của 6 ảnh thẻ (5 ảnh webcam trong `results/realtime/` và một khung
+  hình từ giao diện web), luôn dùng nhãn YOLO báo 132 biến thể ra tiền (chỉ nhận khi YOLO tin cậy ≥ 0,8: vẫn 34); luật
+  hiện tại: 0. Đổi lại, F1 trên bộ dữ liệu giảm vì các tờ nhỏ, mờ (SIFT không thấy hoa văn) hiện "?" thay vì lấy nhãn
+  YOLO: valid 94,83% → 88,52%, test 95,51% → 87,14% (`python src/evaluate_web_hybrid.py` → `results/web_hybrid_test/`).
+  Luật được chọn trên valid trong các luật không để lọt thẻ nào.
 - Máy chủ chỉ nghe trên `127.0.0.1`; camera cần trang mở qua `http://localhost` (hoặc https). Ảnh lớn được thu về cạnh
   dài 800 px trước SIFT; ảnh ≤ 640 px được phóng to ×1,5 như khi đánh giá nhiều tờ.
 - Tùy chọn: `--port 8000` đổi cổng. Dừng máy chủ bằng `Ctrl+C` trong terminal; nếu chạy bằng nút Run (Code Runner) của

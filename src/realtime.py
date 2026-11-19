@@ -33,8 +33,8 @@ import numpy as np
 
 from color_model import MODEL_PATH, ColorModel, hsv_hist
 import evaluate_sift
-from evaluate_sift import (MIN_INLIERS, RANSAC_THRESH, ROOT, UNKNOWN, candidates, classify_image, crop_box,
-                           evidence_ok, fuse, load_templates, quad_angle_dev, resize_max)
+from evaluate_sift import (MAX_AREA, MIN_INLIERS, RANSAC_THRESH, ROOT, UNKNOWN, candidates, classify_image,
+                           crop_box, evidence_ok, fuse, load_templates, quad_angle_dev, resize_max)
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -198,15 +198,22 @@ class Recognizers:
         finally:
             evaluate_sift.CLAHE_CLIP = 0.0
 
-    def classify_crop(self, frame, box, yolo_label=None):
-        """Trả về (mệnh giá hoặc UNKNOWN, số inlier, có dùng CLAHE dự phòng không)."""
+    def classify_crop(self, frame, box, yolo_label=None, with_pattern=False):
+        """Trả về (mệnh giá hoặc UNKNOWN, số inlier, có dùng CLAHE dự phòng không).
+
+        with_pattern=True: trả thêm số inlier lớn nhất của ứng viên SIFT có khung homography gần chữ nhật (bất kể mệnh
+        giá) – bằng chứng vùng cắt có hoa văn tờ tiền dù chưa chắc mệnh giá (web_app.py dùng để quyết định có được lấy
+        nhãn YOLO hay không)."""
         crop = crop_box(frame, box)
         if HYBRID_CROP_MAX:
             crop = resize_max(crop, HYBRID_CROP_MAX)
         rank = self.color.rank(hsv_hist(crop)) if self.color else None
+        pattern = [0]
 
         def attempt(templates):
             cands = candidates(crop, templates, (RANSAC_THRESH,))[RANSAC_THRESH]
+            pattern[0] = max([pattern[0]] + [c[1] for c in cands
+                                              if c[3] <= MAX_AREA and quad_angle_dev(c[5]) <= EVIDENCE_ANGLE])
             label, inliers = fuse(cands, rank, exclusive=MARGIN_EXCLUSIVE)
             # Cổng bằng chứng (xem EVIDENCE_ANGLE): cần ứng viên SIFT cùng mệnh giá, khung gần chữ nhật, đủ điểm khớp
             if label != UNKNOWN and not evidence_ok(cands, label, yolo_label, EVIDENCE_ANGLE, EVIDENCE_MIN,
@@ -215,10 +222,11 @@ class Recognizers:
             return label, inliers
 
         label, inliers = attempt(self.templates)
+        used_clahe = False
         if label == UNKNOWN and self.templates_clahe:
             label, inliers = self._with_clahe(attempt, self.templates_clahe)
-            return label, inliers, True
-        return label, inliers, False
+            used_clahe = True
+        return (label, inliers, used_clahe, pattern[0]) if with_pattern else (label, inliers, used_clahe)
 
     def hybrid(self, frame, tracker, recheck, now=None):
         """YOLO định vị; SIFT + màu nhận diện tờ mới hoặc đã lâu chưa kiểm tra lại.

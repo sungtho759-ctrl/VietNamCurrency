@@ -120,6 +120,33 @@ Kết quả mong đợi: `'yolo': True, 'yolo_backend': 'onnx'`. Khi thử như 
 hai lần: thường và CLAHE cho chế độ kết hợp), SIFT ~0,35 s, YOLO ~0,04–0,3 s và kết hợp ~0,15–2 s cho một ảnh 640 × 640
 (tùy số tờ, mỗi tờ một lần SIFT + màu).
 
+## Vật không phải tiền
+
+Bản trên Vercel là thứ ai cũng mở được và thử với camera, nên rất dễ gặp vật không phải tiền (thẻ ATM, thẻ bảo hiểm y
+tế…). YOLO chỉ được huấn luyện trên ảnh có tờ tiền nên khoanh và gán mệnh giá cho các tấm thẻ này, kể cả với độ tin
+cậy cao. Mục kết hợp vì vậy dùng cổng bằng chứng của `realtime.py`:
+
+- Khung YOLO chỉ được báo mệnh giá khi SIFT + màu xác nhận (ứng viên cùng mệnh giá, khung homography lệch ≤ 45° so với
+  hình chữ nhật, ≥ 8 cặp khớp hoặc ≥ 4 khi trùng nhãn YOLO). Chưa kết luận thì hiện "?" và không cộng vào tổng tiền.
+- Nhãn YOLO chỉ được dùng cho khung chưa kết luận khi SIFT đã thấy hoa văn tờ tiền (ứng viên bất kỳ mệnh giá với ≥ 8
+  cặp khớp, khung gần chữ nhật) – `YOLO_LABEL_MIN_PATTERN` trong `src/web_app.py`.
+- Khi YOLO không thấy tờ nào, SIFT trên toàn ảnh cũng phải qua cổng (≥ 8 cặp khớp, khung ≤ 45°).
+
+Phiên bản đầu của web dùng nhãn YOLO cho mọi khung chưa kết luận và không có cổng cho SIFT toàn ảnh: thẻ ATM xanh bị
+báo 20.000 đ. Thử trên 246 biến thể (dịch, co giãn, xoay ±8°, mờ, đổi sáng) của 6 ảnh thẻ:
+
+| Luật cho khung SIFT + màu chưa kết luận (SIFT toàn ảnh có cổng) | F1 valid | F1 test | Biến thể thẻ bị báo ra tiền |
+|---|---|---|---|
+| Luôn dùng nhãn YOLO (phiên bản đầu) | 94,83% | 95,51% | 132/246 |
+| Nhãn YOLO khi YOLO tin cậy ≥ 0,8 | 94,33% | 94,28% | 34/246 |
+| Nhãn YOLO khi SIFT thấy hoa văn (≥ 6 cặp khớp) | 89,26% | 87,77% | 7/246 |
+| **Nhãn YOLO khi SIFT thấy hoa văn (≥ 8 cặp khớp)** (đang dùng) | **88,52%** | 87,14% | **0/246** |
+| Không dùng nhãn YOLO (luôn "?") | 88,36% | 87,03% | 0/246 |
+
+Không bật cổng cho SIFT toàn ảnh thì ngay cả khi không dùng nhãn YOLO vẫn lọt 16/246 biến thể. Luật được chọn trên valid
+trong các luật lọt 0 thẻ. Cái giá là F1 trên bộ dữ liệu giảm khoảng 8 điểm: tờ nhỏ, mờ chụp xa (SIFT không thấy hoa
+văn) hiện "?" thay vì lấy nhãn YOLO. Muốn có cả hai cần huấn luyện lại YOLO với ảnh âm (thẻ, giấy tờ, ví…) không gắn nhãn.
+
 ## Giới hạn khi chạy trên Vercel
 
 - **Khởi động lạnh:** phiên bản hàm mới phải nạp thư viện, 20 ảnh mẫu SIFT, mô hình màu và YOLO (vài giây). Yêu cầu

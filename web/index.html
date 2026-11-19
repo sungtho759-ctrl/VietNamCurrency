@@ -166,7 +166,7 @@
         <ol class="pipeline" aria-label="Các bước của phương pháp kết hợp">
           <li><b>1. YOLO11n định vị</b><span>Tìm khung bao từng tờ (ngưỡng tin cậy chọn trên tập valid)</span></li>
           <li><b>2. SIFT + màu nhận diện</b><span>Mỗi vùng cắt được đối sánh với ảnh mẫu, kiểm chứng homography, kết hợp màu HSV</span></li>
-          <li><b>3. Quyết định</b><span>SIFT + màu đủ bằng chứng thì dùng mệnh giá đó; chưa kết luận thì theo YOLO hoặc để “?”</span></li>
+          <li><b>3. Quyết định</b><span>SIFT + màu đủ bằng chứng thì dùng mệnh giá đó; chưa kết luận thì để “?” (theo YOLO chỉ khi SIFT đã thấy hoa văn tờ tiền)</span></li>
         </ol>
 
         <article class="method wide" id="m-hybrid" data-state="idle">
@@ -189,7 +189,7 @@
           </dl>
           <p class="hybrid-summary" id="hybrid-summary"></p>
           <ol class="notes"></ol>
-          <label class="switch"><input type="checkbox" id="chk-yolo-label" checked><span></span>Dùng nhãn YOLO khi SIFT + màu chưa kết luận</label>
+          <label class="switch"><input type="checkbox" id="chk-yolo-label" checked><span></span>Dùng nhãn YOLO khi SIFT thấy hoa văn tờ tiền nhưng chưa chắc mệnh giá</label>
         </article>
       </div>
     </section>
