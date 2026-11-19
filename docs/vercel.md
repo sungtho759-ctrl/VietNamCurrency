@@ -68,7 +68,7 @@ yolo export model=results/yolo/yolo11n/weights/best.pt format=onnx imgsz=640 dyn
 
 | Tệp | Vai trò |
 |---|---|
-| `vercel.json` | Chuyển mọi đường dẫn về `api/index.py`; thời gian chạy tối đa 60 s; liệt kê tệp dữ liệu đưa vào hàm (`includeFiles`) |
+| `vercel.json` | Chuyển mọi đường dẫn về `api/index.py`; hàm chạy ở Singapore (`regions: ["sin1"]`, mặc định của Vercel là `iad1` – Washington, xa Việt Nam); thời gian chạy tối đa 60 s; liệt kê tệp dữ liệu đưa vào hàm (`includeFiles`) |
 | `.vercelignore` | Không tải lên bộ dữ liệu, kết quả đánh giá, `*.pt`… (~450 MB); chỉ giữ ảnh mẫu, mô hình màu, `best.onnx`, `results.json` |
 | `api/index.py` | Điểm vào hàm: thêm `src/` vào `sys.path` rồi dùng lại `app` của `web_app.py` |
 | `api/requirements.txt` | Thư viện của hàm (Vercel dùng tệp này, không dùng `requirements.txt` ở gốc vì nó có matplotlib và opencv-python bản có GUI) |
